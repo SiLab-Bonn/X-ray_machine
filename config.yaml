@@ -2,7 +2,7 @@ transfer_layer:
   - name     : Serial_SMU
     type     : Serial
     init     :
-        port     : /dev/ttyUSB2
+        port     : /dev/ttyUSB0
         read_termination : "\r"
         baudrate : 19200
 

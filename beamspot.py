@@ -5,6 +5,8 @@
 # ------------------------------------------------------------
 #
 from basil.dut import Dut
+import beamspot_plot
+
 import time
 import datetime
 import math
@@ -16,16 +18,19 @@ import coloredlogs
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import random
-import progressbar
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 coloredlogs.install(level='INFO', logger=logger)
 
 _local_config = {
     'directory': 'data/',
-    'filename': 'fake',
+    'filename': 'diode_a_50mA',
+    'xray_use_remote': True,
+    'xray_voltage': 40,
+    'xray_current': 50,
     'smu_use_bias': True,
-    'smu_diode_bias': 5.0,
+    'smu_diode_bias': 50,
     'smu_current_limit': 1.000000E-04,
     'steps_per_mm': 55555.555556,
     'backlash': 0.0,
@@ -52,6 +57,9 @@ class scan_beamspot():
         self.devices = Dut('config.yaml')
         if self.debug is False:
             self.devices.init()
+        if _local_config['xray_use_remote'] is True:
+            self.xraymachine = Dut('xray.yaml')
+            self.xraymachine.init()
 
     def init(self, x_range=0, y_range=0, z_height=False, stepsize=0, **kwargs):
         self.axis = {
@@ -68,10 +76,12 @@ class scan_beamspot():
         self.backlash = kwargs['backlash']
         self.steps_per_mm = kwargs['steps_per_mm']
         self.debug_pos_mm = {'x': 0, 'y': 0, 'z': 0}
-        self.filename = kwargs['directory']+kwargs['filename']+'_'+str(x_range)+'_'+str(y_range)+'_'+str(stepsize).replace('.','d')+'_'+datetime.datetime.now().strftime("%Y-%m-%d-%H-%M"+'.csv')
+        self.filename = kwargs['directory']+kwargs['filename']+'_'+str(x_range)+'_'+str(y_range)+'_'+str(stepsize).replace('.', 'd')+'_'+datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"+'.csv')
         logger.info('Filename: '+self.filename)
         if(kwargs['smu_use_bias'] is True and self.debug is False):
             self.init_smu(voltage=kwargs['smu_diode_bias'], current_limit=kwargs['smu_current_limit'])
+
+        return self.filename
 
     def init_smu(self, voltage=0, current_limit=0):
         logger.info(self.devices['SMU'].get_name())
@@ -83,26 +93,59 @@ class scan_beamspot():
         else:
             logger.exception('SMU Voltage %s out of range' % voltage)
 
-    # def _ms_write_read(self, command=None, address=None):
-    #     self.devices['MS'].write(bytearray.fromhex("01%d" % (address + 30)) + command.encode())
-    #     ret = self.devices['MS'].read()
-    #     return ret
+    def smu_get_current(self):
+        rawdata = scan.devices['SMU'].get_current()
+        return float(rawdata[15:-43])
 
-    # def _ms_get_status(self, axis=None):
-    #     status = self.devices['MS'].get_channel(address=self.axis[axis])
-    #     logger.debug('Motor stage controller %s status: %s' % (axis, status))
-    #     return status
+    def xray_control(self, voltage=0, current=0, shutter='close'):
+        # Set high voltage and current
+        if voltage == 0 and current == 0:
+            try:
+                voltage = _local_config['xray_voltage']
+                current = _local_config['xray_current']
+            except RuntimeError as e:
+                logger.error('X-ray control mode is off. %s', e)
+
+        if shutter == 'close':
+            self.xraymachine["xray_tube"].close_shutter()
+        if shutter == 'open':
+            self.xraymachine["xray_tube"].open_shutter()
+
+        self.xraymachine["xray_tube"].set_voltage(voltage)
+        for _ in range(10):
+            time.sleep(1)
+            xray_v = self.xraymachine["xray_tube"].get_actual_voltage()
+            logger.warning('X-ray voltage ramping up: %s kV' % xray_v)
+            if xray_v == voltage:
+                break
+        if xray_v != voltage:
+            logger.error('X-ray voltage is %s but expected %s' % (xray_v, voltage))
+        else:
+            logger.info('X-ray voltage set to %s kV' % xray_v)
+
+        self.xraymachine["xray_tube"].set_current(current)
+        for _ in range(10):
+            time.sleep(1)
+            xray_i = self.xraymachine["xray_tube"].get_actual_current()
+            logger.warning('X-ray current ramping up: %s mA' % xray_i)
+            if xray_i == current:
+                break
+        if xray_i != current:
+            logger.error('X-ray current is %s but expected %s' % (xray_i, current))
+        else:
+            logger.info('X-ray current set to %s mA' % xray_i)
 
     def _ms_get_position(self, axis=None):
-        if self.debug is True:
-            position_mm = self.debug_pos_mm[axis]
-            position = position_mm*self.steps_per_mm
-        else:
-            position = int(self.devices['MS'].get_position(address=self.axis[axis]))
-            #position = int(self._ms_write_read("TP", address=self.axis[axis])[2:-3])
-            position_mm = position/self.steps_per_mm
-        logger.debug('Motor stage controller %s position: %s \t %.3f mm' % (axis, position, position_mm))
-        return position, position_mm
+        for ax in axis:
+            if self.debug is True:
+                position_mm = self.debug_pos_mm[ax]
+                position = position_mm*self.steps_per_mm
+            else:
+                position = int(self.devices['MS'].get_position(address=self.axis[ax]))
+                #position = int(self._ms_write_read("TP", address=self.axis[ax])[2:-3])
+                position_mm = position/self.steps_per_mm
+            logger.debug('Motor stage controller %s position: %s \t %.3f mm' % (ax, position, position_mm))
+            return position, position_mm
 
     def _ms_move_rel(self, axis=None, value=0, precision=0.02, wait=True):
         if self.invert[axis] is True:
@@ -159,16 +202,19 @@ class scan_beamspot():
         if wait is True:
             self._wait_pos(axis=axis, target=0)
 
-    def goto_home_position(self, axis=None, wait=True):
+    def goto_home_position(self, axis=[], wait=True):
         logger.info('Moving to home position')
         if self.debug is False:
-            self.devices['MS']._write_command('GH', self.axis[axis])
+            for ax in axis:
+                self.devices['MS']._write_command('GH', self.axis[ax])
         if wait is True:
-            self._wait_pos(axis)
+            for ax in axis:
+                self._wait_pos(ax)
 
-    def set_home_position(self, axis=None):
-        logger.warning('Set new home position for %s-axis)' % axis)
-        self._ms_write_read('DH', self.axis[axis])
+    def set_home_position(self, axis=[]):
+        for ax in axis:
+            logger.warning('Set new home position for %s-axis)' % ax)
+            self.devices['MS']._write_command('DH', self.axis[ax])
 
     def step_scan(self, precision=0.02, wait=True):
         x_range, y_range, z_height, stepsize = self.x_range, self.y_range, self.z_height, self.stepsize
@@ -193,11 +239,12 @@ class scan_beamspot():
         backlash = self.backlash
 
         while done is False:
+            outerpbar = tqdm(total=self.y_range/self.stepsize, desc='row', position=0)
             # move y
             for indx_y, y_move in enumerate(np.arange(y_start, y_stop+stepsize, stepsize)):
-                logger.info('row %s of %s' % (indx_y, y_steps))
+                logger.debug('row %s of %s' % (indx_y, y_steps))
                 self._ms_move_abs('y', value=y_move, wait=True)
-                # move x
+
                 if indx_y % 2:
                     x_start_line = x_stop
                     x_stop_line = x_start-stepsize
@@ -207,60 +254,73 @@ class scan_beamspot():
                     x_stop_line = x_stop+stepsize
                     stepsize_line = stepsize
 
-                widgets = [progressbar.Percentage(), progressbar.Bar()]
-                bar = progressbar.ProgressBar(self.x_range/self.stepsize, widgets=widgets).start()
+                data = []
+                innerpbar = tqdm(total=self.x_range/self.stepsize, desc='column', position=1)
+
+                # move x
                 for indx_x, x_move in enumerate(np.arange(x_start_line, x_stop_line, stepsize_line)):
                     self._ms_move_abs('x', value=x_move+backlash, wait=True)
-                    bar.update(indx_y)
-                    if self.debug is False:                    
+                    if self.debug is False:
                         time.sleep(0.1)
-                        rawdata = self.devices['SMU'].get_current()
-                        current = float(rawdata[15:-43])
+                        current = self.smu_get_current()
                     else:
                         current = (1/(2*np.pi*5*10) * np.exp(-(self.debug_pos_mm['x']**2/(2*5**2) + self.debug_pos_mm['y']**2/(2*5**2))))
-                    data.append([x_move, y_move, current])
-                    with open(self.filename, mode='a') as csv_file:
-                        file_writer = csv.writer(csv_file)
-                        file_writer.writerow([x_move, y_move, current])
-                bar.finish()
+                    data.append([round(x_move, 2), round(y_move, 2), current])
+                    innerpbar.update()
+                # write the last row and invert order for even rows
+                if indx_y % 2:
+                    data.reverse() # np.flipud(data)
+                with open(self.filename, mode='a') as csv_file:
+                    file_writer = csv.writer(csv_file)
+                    for entr in data:
+                        file_writer.writerow(entr) #[round(x_move, 2), round(y_move, 2), current])
+
+                outerpbar.update(1)
+
             done = True
 
-        data = np.array(data).T
-        N = int(len(data[2])**.5)
-        z = data[2].reshape(N, N)
+        # data = np.array(data).T
+        # N = int(len(data[2])**.5)
+        # z = data[2].reshape(N, N)
 
-        z_reshaped = []
-        for idx, row in enumerate(z):
-            if idx % 2:
-                z_reshaped.append(np.flip(row))
-            else:
-                z_reshaped.append(row)
+        # z_reshaped = []
+        # for idx, row in enumerate(z):
+        #     if idx % 2:
+        #         z_reshaped.append(np.flip(row))
+        #     else:
+        #         z_reshaped.append(row)
 
-        plt.imshow(np.flip(z_reshaped, 0), extent=(np.amin(data[0]), np.amax(data[0]), np.amin(data[1]), np.amax(data[1])), aspect = '1')
-        plt.colorbar()
-        plt.savefig('last.png')
-        plt.savefig(fname=self.filename[:-4], dpi=200)
-        plt.show()
+        # plt.imshow(np.flip(z_reshaped, 0), extent=(np.amin(data[0]), np.amax(data[0]), np.amin(data[1]), np.amax(data[1])), aspect = '1')
+        # plt.colorbar()
+        # plt.savefig('last.png')
+        # plt.savefig(fname=self.filename[:-4], dpi=200)
+        # plt.show()
 
 
 if __name__ == '__main__':
     scan = scan_beamspot()
-    scan.init(x_range=2, y_range=2, z_height=False, stepsize=1, **_local_config)
 
-    scan._ms_get_position('x')
-    scan._ms_get_position('y')
-#    scan._ms_get_position('z')
+    filename = scan.init(x_range=40, y_range=40, z_height=False, stepsize=5, **_local_config)
 
-    scan.goto_home_position('x')
-    scan.goto_home_position('y')
+    # TODO: Measure background
+    background = scan.smu_get_current()
+    logger.info('background current=%s' % background)
 
+    scan._ms_get_position(['x','y'])
 #    scan._ms_move_rel('x', -4)
 #    scan._ms_move_rel('y', 10)
 
-#    scan.set_home_position('x')
-#    scan.set_home_position('y')
+    scan.goto_home_position(('x','y'))
 
+    scan.xray_control(shutter='open')
     scan.step_scan()
+    scan.xray_control(shutter='close')
 
-    scan.goto_home_position('x')
-    scan.goto_home_position('y')
+    scan.goto_home_position(('x','y'))
+
+    # generate plots
+    plot = beamspot_plot.utils()
+    try:
+        plot.plot_data(filename=filename, background=background)
+    except RuntimeError as e:
+        logger.error('Error loading '+filename+"'", e)
