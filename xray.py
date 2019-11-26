@@ -23,26 +23,6 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 coloredlogs.install(level='INFO', logger=logger)
 
-_local_config = {
-    'directory': 'data/',
-    'filename': 'test',
-    'factor': 9.76,
-    'xray_use_remote': True,
-    'xray_voltage': 40,
-    'xray_current': 5,
-    'smu_use_bias': True,
-    'smu_diode_bias': 50,
-    'smu_current_limit': 1.000000E-04,
-    'steps_per_mm': 55555.555556,
-    'backlash': 0.0,
-    'address_x': 1,
-    'address_y': 2,
-    'address_z': 3,
-    'invert_x': True,
-    'invert_y': True,
-    'invert_z': False
-}
-
 
 class utils():
     '''
@@ -56,9 +36,9 @@ class utils():
         self.devices = Dut('config.yaml')
         if self.debug is False:
             self.devices.init()
-        if _local_config['xray_use_remote'] is True:
-            self.xraymachine = Dut('xray.yaml')
-            self.xraymachine.init()
+            if kwargs['xray_use_remote'] is True:
+                self.xraymachine = Dut('xray.yaml')
+                self.xraymachine.init()
 
     def init(self, x_range=0, y_range=0, z_height=False, stepsize=0, **kwargs):
         self.axis = {
@@ -72,15 +52,15 @@ class utils():
             'z': kwargs['invert_z']
             }
         self.x_range, self.y_range, self.z_height, self.stepsize = x_range, y_range, z_height, stepsize
-        self.backlash = kwargs['backlash']
         self.steps_per_mm = kwargs['steps_per_mm']
         self.debug_motor_res = 0.1
         self.debug_delay = 0
         self.debug_pos_mm = {'x': 0, 'y': 0, 'z': 0}
         self.filename = kwargs['directory']+'_'+kwargs['filename']+'_'+str(x_range)+'_'+str(y_range)+'_'+str(stepsize).replace('.', 'd')+'_'+datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"+'.csv')
         logger.info('Filename: '+self.filename)
-        if(kwargs['smu_use_bias'] is True and self.debug is False):
-            self.init_smu(voltage=kwargs['smu_diode_bias'], current_limit=kwargs['smu_current_limit'])
+        if self.debug is False:
+            if(kwargs['smu_use_bias'] is True and self.debug is False):
+                self.init_smu(voltage=kwargs['smu_diode_bias'], current_limit=kwargs['smu_current_limit'])
 
         return self.filename
 
@@ -95,7 +75,7 @@ class utils():
             logger.exception('SMU Voltage %s out of range' % voltage)
 
     def smu_get_current(self, n=None):
-        if n == None:
+        if n is None:
             return float(self.devices['SMU'].get_current()[15:-43])
         else:
             rawdata = []
@@ -243,7 +223,6 @@ class utils():
 
         data = []
         done = False
-        backlash = self.backlash
 
         while done is False:
             outerpbar = tqdm(total=self.y_range/self.stepsize, desc='row', position=0)
@@ -266,7 +245,7 @@ class utils():
 
                 # move x
                 for indx_x, x_move in enumerate(np.arange(x_start_line, x_stop_line, stepsize_line)):
-                    self._ms_move_abs('x', value=x_move+backlash, wait=True)
+                    self._ms_move_abs('x', value=x_move, wait=True)
                     if self.debug is False:
                         time.sleep(0.1)
                         current = self.smu_get_current()
@@ -281,7 +260,7 @@ class utils():
                 with open(self.filename, mode='a') as csv_file:
                     file_writer = csv.writer(csv_file)
                     for entr in data:
-                        file_writer.writerow(entr) #[round(x_move, 2), round(y_move, 2), current])
+                        file_writer.writerow(entr)
 
                 outerpbar.update(1)
 
@@ -289,14 +268,4 @@ class utils():
 
 
 if __name__ == '__main__':
-    # Example (debug mode): Create a new config, specify scanning range and step size
-    scan = utils(debug=True, **_local_config)
-    filename = scan.init(x_range=10, y_range=10, stepsize=0.5, **_local_config)
-
-    # Move to home position (motor movement is simulated) and start the scan
-    scan.goto_home_position(('x', 'y'))
-    scan.step_scan()
-
-    # Create beam profile plots
-    plot = xray_plotting.plot()
-    plot.plot_data(filename=filename, background=0, factor=1)
+    pass
