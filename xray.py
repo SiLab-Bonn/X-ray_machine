@@ -5,7 +5,7 @@
 # ------------------------------------------------------------
 #
 from basil.dut import Dut
-import beamspot_plot
+import xray_plotting
 
 import time
 import datetime
@@ -25,10 +25,11 @@ coloredlogs.install(level='INFO', logger=logger)
 
 _local_config = {
     'directory': 'data/',
-    'filename': 'diode_a_50mA',
+    'filename': 'test',
+    'factor': 9.76,
     'xray_use_remote': True,
     'xray_voltage': 40,
-    'xray_current': 50,
+    'xray_current': 5,
     'smu_use_bias': True,
     'smu_diode_bias': 50,
     'smu_current_limit': 1.000000E-04,
@@ -43,17 +44,15 @@ _local_config = {
 }
 
 
-class scan_beamspot():
+class utils():
     '''
         Simple beam profile scan
         - Stores the measured current values and the corresponding coordinates
         - Has a debug mode which generates fake data
     '''
 
-    def __init__(self):
-        self.debug = False
-        self.debug_motor_res = 0.1
-        self.debug_delay = 0
+    def __init__(self, debug=False, **kwargs):
+        self.debug = debug
         self.devices = Dut('config.yaml')
         if self.debug is False:
             self.devices.init()
@@ -75,8 +74,10 @@ class scan_beamspot():
         self.x_range, self.y_range, self.z_height, self.stepsize = x_range, y_range, z_height, stepsize
         self.backlash = kwargs['backlash']
         self.steps_per_mm = kwargs['steps_per_mm']
+        self.debug_motor_res = 0.1
+        self.debug_delay = 0
         self.debug_pos_mm = {'x': 0, 'y': 0, 'z': 0}
-        self.filename = kwargs['directory']+kwargs['filename']+'_'+str(x_range)+'_'+str(y_range)+'_'+str(stepsize).replace('.', 'd')+'_'+datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"+'.csv')
+        self.filename = kwargs['directory']+'_'+kwargs['filename']+'_'+str(x_range)+'_'+str(y_range)+'_'+str(stepsize).replace('.', 'd')+'_'+datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"+'.csv')
         logger.info('Filename: '+self.filename)
         if(kwargs['smu_use_bias'] is True and self.debug is False):
             self.init_smu(voltage=kwargs['smu_diode_bias'], current_limit=kwargs['smu_current_limit'])
@@ -93,9 +94,15 @@ class scan_beamspot():
         else:
             logger.exception('SMU Voltage %s out of range' % voltage)
 
-    def smu_get_current(self):
-        rawdata = scan.devices['SMU'].get_current()
-        return float(rawdata[15:-43])
+    def smu_get_current(self, n=None):
+        if n == None:
+            return float(self.devices['SMU'].get_current()[15:-43])
+        else:
+            rawdata = []
+            for _ in range(n):
+                rawdata.append(float(self.devices['SMU'].get_current()[15:-43]))
+            print(rawdata)
+            return np.mean(rawdata), np.std(rawdata)
 
     def xray_control(self, voltage=0, current=0, shutter='close'):
         # Set high voltage and current
@@ -115,7 +122,7 @@ class scan_beamspot():
         for _ in range(10):
             time.sleep(1)
             xray_v = self.xraymachine["xray_tube"].get_actual_voltage()
-            logger.warning('X-ray voltage ramping up: %s kV' % xray_v)
+            logger.warning('X-ray voltage adjusing: %s kV' % xray_v)
             if xray_v == voltage:
                 break
         if xray_v != voltage:
@@ -264,12 +271,13 @@ class scan_beamspot():
                         time.sleep(0.1)
                         current = self.smu_get_current()
                     else:
-                        current = (1/(2*np.pi*5*10) * np.exp(-(self.debug_pos_mm['x']**2/(2*5**2) + self.debug_pos_mm['y']**2/(2*5**2))))
+                        x0, y0, fwhm = 0, 0, (x_stop-x_start)/3
+                        current = np.exp(-4*np.log(2) * ((self.debug_pos_mm['x']-x0)**2 + (self.debug_pos_mm['y']-y0)**2) / fwhm**2) * 1e-6
                     data.append([round(x_move, 2), round(y_move, 2), current])
                     innerpbar.update()
                 # write the last row and invert order for even rows
                 if indx_y % 2:
-                    data.reverse() # np.flipud(data)
+                    data.reverse()
                 with open(self.filename, mode='a') as csv_file:
                     file_writer = csv.writer(csv_file)
                     for entr in data:
@@ -279,48 +287,16 @@ class scan_beamspot():
 
             done = True
 
-        # data = np.array(data).T
-        # N = int(len(data[2])**.5)
-        # z = data[2].reshape(N, N)
-
-        # z_reshaped = []
-        # for idx, row in enumerate(z):
-        #     if idx % 2:
-        #         z_reshaped.append(np.flip(row))
-        #     else:
-        #         z_reshaped.append(row)
-
-        # plt.imshow(np.flip(z_reshaped, 0), extent=(np.amin(data[0]), np.amax(data[0]), np.amin(data[1]), np.amax(data[1])), aspect = '1')
-        # plt.colorbar()
-        # plt.savefig('last.png')
-        # plt.savefig(fname=self.filename[:-4], dpi=200)
-        # plt.show()
-
 
 if __name__ == '__main__':
-    scan = scan_beamspot()
+    # Example (debug mode): Create a new config, specify scanning range and step size
+    scan = utils(debug=True, **_local_config)
+    filename = scan.init(x_range=10, y_range=10, stepsize=0.5, **_local_config)
 
-    filename = scan.init(x_range=40, y_range=40, z_height=False, stepsize=5, **_local_config)
-
-    # TODO: Measure background
-    background = scan.smu_get_current()
-    logger.info('background current=%s' % background)
-
-    scan._ms_get_position(['x','y'])
-#    scan._ms_move_rel('x', -4)
-#    scan._ms_move_rel('y', 10)
-
-    scan.goto_home_position(('x','y'))
-
-    scan.xray_control(shutter='open')
+    # Move to home position (motor movement is simulated) and start the scan
+    scan.goto_home_position(('x', 'y'))
     scan.step_scan()
-    scan.xray_control(shutter='close')
 
-    scan.goto_home_position(('x','y'))
-
-    # generate plots
-    plot = beamspot_plot.utils()
-    try:
-        plot.plot_data(filename=filename, background=background)
-    except RuntimeError as e:
-        logger.error('Error loading '+filename+"'", e)
+    # Create beam profile plots
+    plot = xray_plotting.plot()
+    plot.plot_data(filename=filename, background=0, factor=1)

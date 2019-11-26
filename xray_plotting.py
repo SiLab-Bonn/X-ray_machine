@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 coloredlogs.install(level='INFO', logger=logger)
 
 
-class utils(object):
-    '''
+class plot(object):
+    ''' Plotting functions for beam profiles etc.
     '''
 
     def __init__(self, filename=None):
@@ -51,16 +51,28 @@ class utils(object):
 
         return data
 
-    def convert_data(self, data, background=0, scale=0):
+    def convert_data(self, data, background=0, factor=1, scale=0, flip=False, unit='rad'):
+        ''' Converts the raw data in units of [A] or [rad]
+                background: dark current in [A]
+                factor: diode calibration factor
+                scale: adjusts the axis labels
+                flip: backwards compatible with old data format
+        '''
         N = int(len(data[2])**.5)
-        z = scale * (data[2].reshape(N, N) - background)
-        # z_reshaped = []
+        if unit == 'A':
+            z = scale * (data[2].reshape(N, N) - background)
+        else:
+            # calculate the dose rate based on the measured delta current in uA and the diode calibration factor
+            z = scale * (data[2].reshape(N, N) - background) * factor / 1000
 
-        # for idx, row in enumerate(z):
-        # #     if idx % 2:
-        # #         z_reshaped.append(np.flip(row))
-        # #     else:
-        #     z_reshaped.append(row)
+        if flip is True:
+            z_reshaped = []
+            for idx, row in enumerate(z):
+                if idx % 2:
+                    z_reshaped.append(np.flip(row))
+                else:
+                    z_reshaped.append(row)
+            z = z_reshaped
 
         return data, N, z
 
@@ -68,7 +80,7 @@ class utils(object):
         # TODO:
         pass
 
-    def find_beam_parameter(self, z, N, dim):
+    def find_beam_parameters(self, z, N, dim):
         try:
             # x = np.linspace(dim[0], dim[1], N)
             # y = np.linspace(dim[2], dim[3], N)
@@ -82,7 +94,7 @@ class utils(object):
             # Find edges
             cut = np.amax(z) * 0.1
             edges = canny(z)
-            # Perform a Hough Transform
+            # Perform a Hough transform
             hough_radii = range(1, N, 1)
             result = hough_circle(edges, hough_radii)
             accums, cx, cy, radii = hough_circle_peaks(result, hough_radii, total_num_peaks=1)
@@ -90,7 +102,7 @@ class utils(object):
             logger.error(e)
         return cx, cy, radii
 
-    def create_profile_plot(self, data, N, z, name='test'):
+    def create_profile_plot(self, data, N, z, name='test', unit='rad'):
         fig, ax = plt.subplots()
 
         extent = (np.amin(data[0]), np.amax(data[0]),
@@ -105,13 +117,17 @@ class utils(object):
         ax.set_ylabel("y position [mm]")
 
         cbar = fig.colorbar(im)
-        cbar.ax.set_ylabel('$\Delta$ diode current [$n$A]')
+        if unit == 'A':
+            label = '$\Delta$ diode current [nA]'
+        if unit == 'rad':
+            label = 'Dose rate in SiO2 [Mrad/h]'
+        cbar.ax.set_ylabel(label)
 #        ax.clabel(im,inline=True,fmt="%1.1f",fontsize=8)
         plt.savefig(name+'_raw', dpi=200)
         plt.savefig('last', dpi=200)
         plt.close('all')
 
-    def create_fancy_profile_plot(self, data, N, z, name='test'):
+    def create_fancy_profile_plot(self, data, N, z, name='test', unit='rad'):
         left, width = 0.1, 0.65
         bottom, height = 0.13, 0.65
         bottom_h = left_h = left + width + 0.07
@@ -139,21 +155,21 @@ class utils(object):
         meany, stdy = norm.fit(sumyn)
 
         # plot image and contour
-        im = plt.imshow(np.flip(z, 0), extent=extent, cmap=cm.viridis,
+        im = plt.imshow(np.flip(z, 0), extent=extent, cmap='viridis',
                         interpolation="bicubic")
-        cset = plt.contour(z/np.amax(z), linewidths=.8, cmap=cm.cividis_r, extent=extent)
+        cset = plt.contour(z/np.amax(z), linewidths=.8, cmap='cividis_r', extent=extent)
         axColor.clabel(cset, inline=True, fmt="%1.1f", fontsize=8)
         axColor.set(xlabel='x position [mm]', ylabel='y position [mm]',
                     title='Beam profile ('+name+')')
         axColor.title.set_position([0.5, 1.01])
 
         # also plot a circle fitted to the 10% max intensity contour
-        center_x, center_y, radius = self.find_beam_parameter(z, N, extent)
+        center_x, center_y, radius = self.find_beam_parameters(z, N, extent)
         radius = (xmax - xmin) * radius/N
         # center_x = (xmax - xmin) * center_x/(N-1) + xmin
         # center_y = (ymax - ymin) * center_y/(N-1) + ymin
-        center_x = meanx
-        center_y = meany
+        center_x = 0  # meanx
+        center_y = 0  # meany
         # circle = Circle((center_x, center_y), radius, color='red', fill=False)
         # axColor.add_artist(circle)
 
@@ -176,29 +192,30 @@ class utils(object):
         axHisty.grid(True, alpha=0.5)
 
         axCbar = fig.add_axes([left, 0.05, width, cbarHeight])
-        cbar = plt.colorbar(im, cax=axCbar, label='$\Delta$ diode current [nA]',
+        if unit == 'A':
+            label = '$\Delta$ diode current [nA]'
+        if unit == 'rad':
+            label = '$\Dose rate in SiO2 [Mrad/h]'
+        cbar = plt.colorbar(im, cax=axCbar, label=label,
                             orientation='horizontal')
 #        cbar.set_ticks(np.arange(np.floor(z), np.ceil(z), 0.1))
 
         # save and show the plot
-#        plt.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
         plt.savefig(name, dpi=200)
         plt.savefig('last_fancy', dpi=200)
         plt.close('all')
-#        plt.show()
 
-    def plot_data(self, filename=None, data=[], z=[], background=0):
-        data, N, z = self.convert_data(self.load_data(filename), background=background, scale=10e9)
-        #self.find_beam_parameter(np.array(z))
-        self.create_profile_plot(data, N, np.array(z), name=filename[:-4])
-        self.create_fancy_profile_plot(data, N, np.array(z), name=filename[:-4])
+    def plot_data(self, filename=None, data=[], z=[], background=0, factor=10, scale=1e9, unit='rad'):
+        data, N, z = self.convert_data(self.load_data(filename), background=background, factor=factor, scale=scale, flip=False, unit=unit)
+        self.create_profile_plot(data, N, np.array(z), name=filename[:-4], unit=unit)
+        self.create_fancy_profile_plot(data, N, np.array(z), name=filename[:-4], unit=unit)
 
 
 if __name__ == '__main__':
-    bs = utils()
+    beamplot = plot()
 
     # find all files
-    path = 'data/'
+    path = 'data/tests'
     extension = 'csv'
     os.chdir(path)
     filelist = glob.glob('*.{}'.format(extension))
@@ -206,9 +223,6 @@ if __name__ == '__main__':
     for filename in filelist:
         logger.info('Processing '+filename+"'")
         try:
-            bs.plot_data(filename=filename, background=5.2e-9)
+            beamplot.plot_data(filename=filename, background=0e-9, unit='rad')
         except RuntimeError as e:
             logger.error('Error loading '+filename+"'", e)
-
-#    bs.plot_data(filename='data/tests/xray_2ma_laser_2019-11-13-19-26.csv')
-#    bs.plot_data(filename='data/11cm/xray_2ma_2019-11-13-18-31.csv')
