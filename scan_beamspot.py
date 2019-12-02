@@ -12,7 +12,7 @@ coloredlogs.install(level='INFO', logger=logger)
 _local_config = {
     'directory': 'data/',
     'filename': 'profile',
-    'distance': '10',
+    'distance': '7',
     'factor': 9.76,
     'xray_use_remote': True,
     'xray_voltage': 40,
@@ -52,6 +52,6 @@ scan.goto_home_position(('x', 'y'))
 # generate plots
 plot = xray_plotting.plot()
 try:
-    plot.plot_data(filename=filename, background=background, factor=_local_config['factor'], unit='A')
+    plot.plot_data(filename=filename, background=background, factor=_local_config['factor'], unit='rad')
 except RuntimeError as e:
     logger.error('Error loading' + filename, e)

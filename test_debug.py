@@ -11,7 +11,7 @@ coloredlogs.install(level='INFO', logger=logger)
 
 _local_config = {
     'directory': 'data/',
-    'filename': 'test',
+    'filename': 'debug',
     'distance': '8',
     'factor': 10,
     'steps_per_mm': 55555.555556,

@@ -19,9 +19,6 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from matplotlib.patches import Circle
 from matplotlib.backends.backend_pdf import PdfPages
-from skimage.feature import canny
-from skimage.transform import hough_circle, hough_circle_peaks
-from scipy.interpolate import interp2d
 from scipy.stats import norm
 
 
@@ -69,41 +66,17 @@ class plot(object):
 
         return data, N, z
 
-    def find_beam_parameters(self, z, N, dim):
-        try:
-            # x = np.linspace(dim[0], dim[1], N)
-            # y = np.linspace(dim[2], dim[3], N)
-            # f = interp2d(x, y, z, kind='linear')
-            # x2 = np.linspace(dim[0], dim[1], N*4)
-            # y2 = np.linspace(dim[2], dim[3], N*4)
-            # z2 = f(x2, y2)
-#            fig, ax = plt.subplots()
-#            ax.imshow(np.flip(z2, 0))
-#            plt.show()
-            # Find edges
-            cut = np.amax(z) * 0.1
-            edges = canny(z)
-            # Perform a Hough transform
-            hough_radii = range(1, N, 1)
-            result = hough_circle(edges, hough_radii)
-            accums, cx, cy, radii = hough_circle_peaks(result, hough_radii, total_num_peaks=1)
-        except RuntimeError as e:
-            logger.error(e)
-        return cx, cy, radii
+    def get_beam_parameters(self, data, z, N):
+        (peak_x, peak_y) = np.where(z == np.amax(z))
+        xmin, xmax, ymin, ymax = (np.amin(data[0]), np.amax(data[0]), np.amin(data[1]), np.amax(data[1]))
+        return peak_x, peak_y, xmin, xmax, ymin, ymax
 
     def create_profile_plot(self, data, N, z, name='test', unit='rad'):
+        _, _, xmin, xmax, ymin, ymax = self.get_beam_parameters(data, z, N)
+        extent = np.round((xmin, xmax, ymin, ymax), decimals=1)
+
         fig, ax = plt.subplots()
-
-        extent = (np.amin(data[0]), np.amax(data[0]),
-                  np.amin(data[1]), np.amax(data[1]))
-
         im = ax.imshow(np.flip(z, 0), extent=extent, aspect='1', alpha=1)
-#        imc = ax.contour(np.flip(z,0), extent=extent, cmap=cm.cividis_r,
-#                         interpolation="bilinear", aspect='1', alpha=1)
-
-        ax.set_title('Beam profile ('+name+')')
-        ax.set_xlabel("x position [mm]")
-        ax.set_ylabel("y position [mm]")
 
         cbar = fig.colorbar(im)
         if unit == 'A':
@@ -111,7 +84,6 @@ class plot(object):
         if unit == 'rad':
             label = 'dose rate in Si$O_2$ [Mrad/h]'
         cbar.ax.set_ylabel(label)
-#        ax.clabel(im,inline=True,fmt="%1.1f",fontsize=8)
         plt.savefig(name+'_raw', dpi=200)
         plt.close('all')
 
@@ -126,10 +98,8 @@ class plot(object):
         rect_histy = [left_h, bottom, 0.15, height]
 
         # get limits from raw data fields
-        (peak_x, peak_y) = np.where(z == np.amax(z))
-        extent = np.round((np.amin(data[0]), np.amax(data[0]),
-                           np.amin(data[1]), np.amax(data[1])), decimals=1)
-        xmin, xmax, ymin, ymax = extent[0], extent[1], extent[2], extent[3]
+        peak_x, peak_y, xmin, xmax, ymin, ymax = self.get_beam_parameters(data, z, N)
+        extent = np.round((xmin, xmax, ymin, ymax), decimals=1)
         histBin = np.linspace(xmin, xmax, N)
 
         fig = plt.figure(figsize=(9, 9))
@@ -137,30 +107,34 @@ class plot(object):
 
         sumx = np.sum(z, 0)
         sumxn = sumx / np.amax(sumx)
-        meanx, stdx = norm.fit(sumxn)
-
         sumy = np.sum(z, 1)
         sumyn = sumy / np.amax(sumy)
-        meany, stdy = norm.fit(sumyn)
 
         # plot image and contour
-        im = plt.imshow(np.flip(z, 0), extent=extent, cmap='viridis',
+        im = plt.imshow(np.flip(z, 0),cmap='viridis', extent=extent,
                         interpolation="bicubic")
         cset = plt.contour(z/np.amax(z), linewidths=.8, cmap='cividis_r', extent=extent)
         axColor.clabel(cset, inline=True, fmt="%1.1f", fontsize=8)
         axColor.set(xlabel='x position [mm]', ylabel='y position [mm]',
                     title='Beam profile ('+name+')')
         axColor.title.set_position([0.5, 1.01])
-        # axColor.annotate('peak:%s Mrad/h' %np.round(np.amax(z),2), xy=((xmax-xmin)/N*peak_y+xmin+1, (ymax-ymin)/N*peak_x+ymin+1))
 
-        center_x, center_y, radius = self.find_beam_parameters(z, N, extent)
-        radius = (xmax - xmin) * radius/N
+        # draw a circle at the peak value
         center_x = 0
         center_y = 0
-        circle = Circle(((xmax-xmin)/N*peak_y+xmin, (ymax-ymin)/N*peak_x+ymin), 1, color='red', fill=False)
-        axColor.legend([circle], ['peak:%s Mrad/h' % np.round(np.amax(z), 2)])
+        radius = (ymax-ymin)/(N-1)/2
+        peak_xx = (xmax-xmin) / N * (peak_x+0.5) + xmin
+        peak_yy = (ymax-ymin) / N * (peak_y+0.5) + ymin
+
+        circle = Circle((peak_yy, peak_xx), radius, color='red', fill=False)
+        if unit == 'rad':
+            label = 'peak:%s Mrad/h'
+        if unit == 'A':
+            label = 'peak:%s nA'
+        axColor.legend([circle], [label % np.round(np.amax(z), 2)])
         axColor.add_artist(circle)
 
+        # draw a cross hair, indicating the laser position
         plt.axhline(y=center_y, linewidth=0.5, linestyle='dashed',
                     color='#d62728')
         plt.axvline(x=center_x, linewidth=0.5, linestyle='dashed',
@@ -197,7 +171,7 @@ class plot(object):
                             orientation='horizontal')
         #cbar.set_ticks(np.arange(np.floor(np.amin(z)), np.ceil(np.amax(z))+0.1, 0.1))
 
-        # save and show the plot
+        # save the plot
         plt.savefig(name, dpi=200)
         plt.close('all')
 
@@ -220,7 +194,7 @@ if __name__ == '__main__':
     beamplot = plot()
 
     # create plots for all files in the given folder
-    path = 'data/calibration/45cm'
+    path = 'data/calibration/7cm'
     extension = 'csv'
     os.chdir(path)
     filelist = glob.glob('*.{}'.format(extension))

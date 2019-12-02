@@ -54,7 +54,6 @@ class utils():
             }         
         self.x_range, self.y_range, self.z_height, self.stepsize = x_range, y_range, z_height, stepsize
         self.steps_per_mm = kwargs['steps_per_mm']
-        self.use_xray_control = kwargs['xray_use_remote']
         self.debug_motor_res = 0.1
         self.debug_delay = 0
         self.debug_pos_mm = {'x': 0, 'y': 0, 'z': 0}
@@ -63,6 +62,7 @@ class utils():
         fh = logging.FileHandler(self.filename[:-4]+'.log')
         if self.debug is False:
             fh.setLevel(logging.DEBUG)
+            self.use_xray_control = kwargs['xray_use_remote']
             self.voltage = kwargs['xray_voltage']
             self.current = kwargs['xray_current']   
             if(kwargs['smu_use_bias'] is True and self.debug is False):
