@@ -113,7 +113,6 @@ class plot(object):
         cbar.ax.set_ylabel(label)
 #        ax.clabel(im,inline=True,fmt="%1.1f",fontsize=8)
         plt.savefig(name+'_raw', dpi=200)
-        plt.savefig('last', dpi=200)
         plt.close('all')
 
     def create_fancy_profile_plot(self, data, N, z, name='test', unit='rad'):
@@ -127,6 +126,7 @@ class plot(object):
         rect_histy = [left_h, bottom, 0.15, height]
 
         # get limits from raw data fields
+        (peak_x, peak_y) = np.where(z == np.amax(z))
         extent = np.round((np.amin(data[0]), np.amax(data[0]),
                            np.amin(data[1]), np.amax(data[1])), decimals=1)
         xmin, xmax, ymin, ymax = extent[0], extent[1], extent[2], extent[3]
@@ -151,16 +151,15 @@ class plot(object):
         axColor.set(xlabel='x position [mm]', ylabel='y position [mm]',
                     title='Beam profile ('+name+')')
         axColor.title.set_position([0.5, 1.01])
+        # axColor.annotate('peak:%s Mrad/h' %np.round(np.amax(z),2), xy=((xmax-xmin)/N*peak_y+xmin+1, (ymax-ymin)/N*peak_x+ymin+1))
 
-        # also plot a circle fitted to the 10% max intensity contour
         center_x, center_y, radius = self.find_beam_parameters(z, N, extent)
         radius = (xmax - xmin) * radius/N
-        # center_x = (xmax - xmin) * center_x/(N-1) + xmin
-        # center_y = (ymax - ymin) * center_y/(N-1) + ymin
-        center_x = 0  # meanx
-        center_y = 0  # meany
-        # circle = Circle((center_x, center_y), radius, color='red', fill=False)
-        # axColor.add_artist(circle)
+        center_x = 0
+        center_y = 0
+        circle = Circle(((xmax-xmin)/N*peak_y+xmin, (ymax-ymin)/N*peak_x+ymin), 1, color='red', fill=False)
+        axColor.legend([circle], ['peak:%s Mrad/h' % np.round(np.amax(z), 2)])
+        axColor.add_artist(circle)
 
         plt.axhline(y=center_y, linewidth=0.5, linestyle='dashed',
                     color='#d62728')
@@ -196,11 +195,10 @@ class plot(object):
             label = 'dose rate in Si$O_2$ [Mrad/h]'
         cbar = plt.colorbar(im, cax=axCbar, label=label,
                             orientation='horizontal')
-#        cbar.set_ticks(np.arange(np.floor(z), np.ceil(z), 0.1))
+        #cbar.set_ticks(np.arange(np.floor(np.amin(z)), np.ceil(np.amax(z))+0.1, 0.1))
 
         # save and show the plot
         plt.savefig(name, dpi=200)
-        plt.savefig('last_fancy', dpi=200)
         plt.close('all')
 
     def plot_data(self, filename=None, background=0, factor=10, scale=1e9, unit='rad'):
@@ -210,8 +208,11 @@ class plot(object):
             scale: scaling factor for plotting
             unit: 'rad' or 'A', in case of 'A', the current is plotted
         '''
+        # Plot raw data in [A] and before subtracting the background
+        data, N, z = self.convert_data(self.load_data(filename), background=0, factor=factor, scale=scale, unit='A')
+        self.create_profile_plot(data, N, np.array(z), name=filename[:-4], unit='A')
+        # Plot the interpolated data in [unit] after subtracting the background
         data, N, z = self.convert_data(self.load_data(filename), background=background, factor=factor, scale=scale, unit=unit)
-        self.create_profile_plot(data, N, np.array(z), name=filename[:-4], unit=unit)
         self.create_fancy_profile_plot(data, N, np.array(z), name=filename[:-4], unit=unit)
 
 
@@ -219,7 +220,7 @@ if __name__ == '__main__':
     beamplot = plot()
 
     # create plots for all files in the given folder
-    path = 'data/calibration/8cm'
+    path = 'data/calibration/45cm'
     extension = 'csv'
     os.chdir(path)
     filelist = glob.glob('*.{}'.format(extension))

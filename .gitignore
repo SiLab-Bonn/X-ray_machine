@@ -1,13 +1,10 @@
 backup/*
 data/*
+!data/calibration
 
 *.json
 *.ipynb
-*.png
-*.pdf
 
 __pycache__/*
 /.ipynb_checkpoints/
 /.vscode/
-/backup/
-/data/
