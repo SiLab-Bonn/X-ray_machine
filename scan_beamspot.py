@@ -11,11 +11,12 @@ coloredlogs.install(level='INFO', logger=logger)
 
 _local_config = {
     'directory': 'data/',
-    'filename': 'test',
+    'filename': 'profile',
+    'distance': '10',
     'factor': 9.76,
     'xray_use_remote': True,
     'xray_voltage': 40,
-    'xray_current': 5,
+    'xray_current': 50,
     'smu_use_bias': True,
     'smu_diode_bias': 50,
     'smu_current_limit': 1.000000E-04,
@@ -30,14 +31,15 @@ _local_config = {
 
 # Simple script to measure a beam profile
 scan = xray.utils(**_local_config)
-filename = scan.init(x_range=8, y_range=8, stepsize=0.4, **_local_config)
+filename = scan.init(x_range=30, y_range=30, stepsize=1.5, **_local_config)
+
+scan.xray_control(shutter='close')
 
 background, std = scan.smu_get_current(10)
 logger.info('background current=%s' % background)
 
 scan.goto_home_position(('x', 'y'))
-
-# scan._ms_move_abs('x', 5)
+# scan._ms_move_abs('y', 1)
 # scan._ms_move_rel('x', 4)
 # scan._ms_move_rel('y', 10)
 
@@ -50,6 +52,6 @@ scan.goto_home_position(('x', 'y'))
 # generate plots
 plot = xray_plotting.plot()
 try:
-    plot.plot_data(filename=filename, background=background, factor=_local_config['factor'])
+    plot.plot_data(filename=filename, background=background, factor=_local_config['factor'], unit='A')
 except RuntimeError as e:
     logger.error('Error loading' + filename, e)

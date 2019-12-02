@@ -4,9 +4,8 @@
 # SiLab, Institute of Physics, University of Bonn
 # ------------------------------------------------------------
 #
-from basil.dut import Dut
-import xray_plotting
 
+import os
 import time
 import datetime
 import math
@@ -20,6 +19,9 @@ from matplotlib.backends.backend_pdf import PdfPages
 import random
 from tqdm import tqdm
 
+from basil.dut import Dut
+import xray_plotting
+
 logger = logging.getLogger(__name__)
 coloredlogs.install(level='INFO', logger=logger)
 
@@ -30,7 +32,6 @@ class utils():
         - Stores the measured current values and the corresponding coordinates
         - Has a debug mode which generates fake data
     '''
-
     def __init__(self, debug=False, **kwargs):
         self.debug = debug
         self.devices = Dut('config.yaml')
@@ -50,17 +51,23 @@ class utils():
             'x': kwargs['invert_x'],
             'y': kwargs['invert_y'],
             'z': kwargs['invert_z']
-            }
+            }         
         self.x_range, self.y_range, self.z_height, self.stepsize = x_range, y_range, z_height, stepsize
         self.steps_per_mm = kwargs['steps_per_mm']
+        self.use_xray_control = kwargs['xray_use_remote']
         self.debug_motor_res = 0.1
         self.debug_delay = 0
         self.debug_pos_mm = {'x': 0, 'y': 0, 'z': 0}
-        self.filename = kwargs['directory']+'_'+kwargs['filename']+'_'+str(x_range)+'_'+str(y_range)+'_'+str(stepsize).replace('.', 'd')+'_'+datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"+'.csv')
+        self.filename = os.path.join(kwargs['directory'], kwargs['filename']+'_'+kwargs['distance']+'cm_'+str(x_range)+'_'+str(y_range)+'_'+str(stepsize).replace('.', 'd')+'_'+datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"+'.csv'))
         logger.info('Filename: '+self.filename)
+        fh = logging.FileHandler(self.filename[:-4]+'.log')
         if self.debug is False:
+            fh.setLevel(logging.DEBUG)
+            self.voltage = kwargs['xray_voltage']
+            self.current = kwargs['xray_current']   
             if(kwargs['smu_use_bias'] is True and self.debug is False):
                 self.init_smu(voltage=kwargs['smu_diode_bias'], current_limit=kwargs['smu_current_limit'])
+        logger.addHandler(fh)
 
         return self.filename
 
@@ -68,6 +75,8 @@ class utils():
         logger.info(self.devices['SMU'].get_name())
         self.devices['SMU'].source_volt()
         self.devices['SMU'].set_current_limit(current_limit)
+        self.devices['SMU'].set_current_sense_range(1E-6)   # 1e-6 is the lowest possible range for the 2410 SMU
+        logger.debug(self.devices['SMU'].get_current_sense_range())
         if (abs(voltage) <= 55):
             self.devices['SMU'].set_voltage(voltage)
             self.devices['SMU'].on()
@@ -75,6 +84,9 @@ class utils():
             logger.exception('SMU Voltage %s out of range' % voltage)
 
     def smu_get_current(self, n=None):
+        ''' Returns the mean and sigma of n consecutive measurements
+            For a single measurement, leave n empty
+        '''
         if n is None:
             return float(self.devices['SMU'].get_current()[15:-43])
         else:
@@ -85,13 +97,19 @@ class utils():
             return np.mean(rawdata), np.std(rawdata)
 
     def xray_control(self, voltage=0, current=0, shutter='close'):
-        # Set high voltage and current
+        ''' Sets high voltage and current, operate the shutter
+            If no values are given for voltage and current, the local_configuration values are used
+        '''
+        if self.use_xray_control is False:
+            logger.warning('X-ray control is not activated')
+            return
+
         if voltage == 0 and current == 0:
             try:
-                voltage = _local_config['xray_voltage']
-                current = _local_config['xray_current']
+                voltage = self.voltage
+                current = self.current
             except RuntimeError as e:
-                logger.error('X-ray control mode is off. %s', e)
+                logger.error('X-ray voltage/current control failed. %s', e)
 
         if shutter == 'close':
             self.xraymachine["xray_tube"].close_shutter()

@@ -31,6 +31,7 @@ coloredlogs.install(level='INFO', logger=logger)
 
 class plot(object):
     ''' Plotting functions for beam profiles etc.
+        Can also be run standalone. In this case, all files in the given folder will be plotted
     '''
 
     def __init__(self, filename=None):
@@ -51,13 +52,14 @@ class plot(object):
 
         return data
 
-    def convert_data(self, data, background=0, factor=1, scale=0, flip=False, unit='rad'):
+    def convert_data(self, data, background=0, factor=1, scale=0, unit='rad'):
         ''' Converts the raw data in units of [A] or [rad]
                 background: dark current in [A]
                 factor: diode calibration factor
                 scale: adjusts the axis labels
-                flip: backwards compatible with old data format
         '''
+        if background == 'auto':
+            background = np.min(data[2])
         N = int(len(data[2])**.5)
         if unit == 'A':
             z = scale * (data[2].reshape(N, N) - background)
@@ -65,20 +67,7 @@ class plot(object):
             # calculate the dose rate based on the measured delta current in uA and the diode calibration factor
             z = scale * (data[2].reshape(N, N) - background) * factor / 1000
 
-        if flip is True:
-            z_reshaped = []
-            for idx, row in enumerate(z):
-                if idx % 2:
-                    z_reshaped.append(np.flip(row))
-                else:
-                    z_reshaped.append(row)
-            z = z_reshaped
-
         return data, N, z
-
-    def plot_intensity_hist(self, z):
-        # TODO:
-        pass
 
     def find_beam_parameters(self, z, N, dim):
         try:
@@ -120,7 +109,7 @@ class plot(object):
         if unit == 'A':
             label = '$\Delta$ diode current [nA]'
         if unit == 'rad':
-            label = 'Dose rate in SiO2 [Mrad/h]'
+            label = 'dose rate in Si$O_2$ [Mrad/h]'
         cbar.ax.set_ylabel(label)
 #        ax.clabel(im,inline=True,fmt="%1.1f",fontsize=8)
         plt.savefig(name+'_raw', dpi=200)
@@ -179,23 +168,32 @@ class plot(object):
                     color='#d62728')
 
         # plot cuts
+        major_ticks = np.arange(0, 1.1, 0.5)
+        minor_ticks = np.arange(0, 1.1, 0.25)
+
         axHistx = fig.add_axes(rect_histx, xlim=(xmin, xmax), ylim=(0, 1))
         axHistx.plot(histBin, sumxn)
         axHistx.set(ylabel='rel. instensity in x')
         axHistx.title.set_position([0.4, 1.05])
-        axHistx.grid(True, alpha=0.5)
+        axHistx.set_yticks(major_ticks)
+        axHistx.set_yticks(minor_ticks, minor=True)
+        axHistx.grid(which='minor', alpha=0.2)
+        axHistx.grid(which='major', alpha=0.5)
 
         axHisty = fig.add_axes(rect_histy, ylim=(ymin, ymax), xlim=(0, 1))
         axHisty.plot(sumyn, histBin)
         axHisty.set(xlabel='rel. instensity in y')
         axHisty.title.set_position([0.4, 1.015])
-        axHisty.grid(True, alpha=0.5)
+        axHisty.set_xticks(major_ticks)
+        axHisty.set_xticks(minor_ticks, minor=True)
+        axHisty.grid(which='minor', alpha=0.2)
+        axHisty.grid(which='major', alpha=0.5)
 
         axCbar = fig.add_axes([left, 0.05, width, cbarHeight])
         if unit == 'A':
             label = '$\Delta$ diode current [nA]'
         if unit == 'rad':
-            label = '$\Dose rate in SiO2 [Mrad/h]'
+            label = 'dose rate in Si$O_2$ [Mrad/h]'
         cbar = plt.colorbar(im, cax=axCbar, label=label,
                             orientation='horizontal')
 #        cbar.set_ticks(np.arange(np.floor(z), np.ceil(z), 0.1))
@@ -205,8 +203,14 @@ class plot(object):
         plt.savefig('last_fancy', dpi=200)
         plt.close('all')
 
-    def plot_data(self, filename=None, data=[], z=[], background=0, factor=10, scale=1e9, unit='rad'):
-        data, N, z = self.convert_data(self.load_data(filename), background=background, factor=factor, scale=scale, flip=False, unit=unit)
+    def plot_data(self, filename=None, background=0, factor=10, scale=1e9, unit='rad'):
+        ''' Converts rawdata and creates the specified plots
+            background: Measured dark current in [A] or 'auto' to use the minimum value as background
+            factor: diode calibration factor in [Mrad/h uA]
+            scale: scaling factor for plotting
+            unit: 'rad' or 'A', in case of 'A', the current is plotted
+        '''
+        data, N, z = self.convert_data(self.load_data(filename), background=background, factor=factor, scale=scale, unit=unit)
         self.create_profile_plot(data, N, np.array(z), name=filename[:-4], unit=unit)
         self.create_fancy_profile_plot(data, N, np.array(z), name=filename[:-4], unit=unit)
 
@@ -214,8 +218,8 @@ class plot(object):
 if __name__ == '__main__':
     beamplot = plot()
 
-    # find all files
-    path = 'data/tests'
+    # create plots for all files in the given folder
+    path = 'data/calibration/8cm'
     extension = 'csv'
     os.chdir(path)
     filelist = glob.glob('*.{}'.format(extension))
@@ -223,6 +227,6 @@ if __name__ == '__main__':
     for filename in filelist:
         logger.info('Processing '+filename+"'")
         try:
-            beamplot.plot_data(filename=filename, background=0e-9, unit='rad')
+            beamplot.plot_data(filename=filename, background='auto', unit='rad')
         except RuntimeError as e:
             logger.error('Error loading '+filename+"'", e)
