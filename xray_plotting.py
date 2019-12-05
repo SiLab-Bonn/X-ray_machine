@@ -67,8 +67,9 @@ class plot(object):
         return data, N, z
 
     def get_beam_parameters(self, data, z, N):
-        (peak_x, peak_y) = np.where(z == np.amax(z))
+        (peak_y, peak_x) = np.where(z == np.amax(z))
         xmin, xmax, ymin, ymax = (np.amin(data[0]), np.amax(data[0]), np.amin(data[1]), np.amax(data[1]))
+        
         return peak_x, peak_y, xmin, xmax, ymin, ymax
 
     def create_profile_plot(self, data, N, z, name='test', unit='rad'):
@@ -105,9 +106,9 @@ class plot(object):
         fig = plt.figure(figsize=(9, 9))
         axColor = fig.add_axes(rect_color)
 
-        sumx = np.sum(z, 0)
+        sumx = z[int((N-1)/2)]  # p.sum(z, 0)
         sumxn = sumx / np.amax(sumx)
-        sumy = np.sum(z, 1)
+        sumy = z.T[int((N-1)/2)]  # np.sum(z, 1)
         sumyn = sumy / np.amax(sumy)
 
         # plot image and contour
@@ -126,12 +127,12 @@ class plot(object):
         peak_xx = (xmax-xmin) / N * (peak_x+0.5) + xmin
         peak_yy = (ymax-ymin) / N * (peak_y+0.5) + ymin
 
-        circle = Circle((peak_yy, peak_xx), radius, color='red', fill=False)
+        circle = Circle((peak_xx, peak_yy), radius, color='red', fill=False)
         if unit == 'rad':
-            label = 'peak:%s Mrad/h'
+            label = 'peak: %s Mrad/h \nat x=%.1f mm y=%.1f mm'
         if unit == 'A':
-            label = 'peak:%s nA'
-        axColor.legend([circle], [label % np.round(np.amax(z), 2)])
+            label = 'peak: %s nA \nat x=%.1f mm y=%.1f mm'
+        axColor.legend([circle], [label % (np.round(np.amax(z), 2), peak_xx, peak_yy)])
         axColor.add_artist(circle)
 
         # draw a cross hair, indicating the laser position
