@@ -2,14 +2,14 @@ transfer_layer:
   - name     : Serial_SMU
     type     : Serial
     init     :
-        port     : /dev/ttyUSB0
+        port     : /dev/ttyUSB1
         read_termination : "\r"
         baudrate : 19200
 
   - name     : Serial_MS
     type     : Serial
     init     :
-        port     : /dev/ttyUSB1
+        port     : /dev/ttyUSB0
         read_termination : "\x03"
         baudrate : 9600
         timeout : 0.1

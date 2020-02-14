@@ -195,7 +195,7 @@ if __name__ == '__main__':
     beamplot = plot()
 
     # create plots for all files in the given folder
-    path = 'data/calibration/7cm'
+    path = 'data/tests'
     extension = 'csv'
     os.chdir(path)
     filelist = glob.glob('*.{}'.format(extension))

@@ -4,10 +4,13 @@ import numpy as np
 
 from basil.dut import Dut
 import xray
+from xray import logger
 import xray_plotting
 
-logger = logging.getLogger(__name__)
-coloredlogs.install(level='INFO', logger=logger)
+
+local_logger = logging.getLogger('scan')
+local_logger.setLevel('INFO')
+coloredlogs.install(level='INFO', logger=local_logger)
 
 _local_config = {
     'directory': 'data/',
@@ -19,7 +22,7 @@ _local_config = {
     'xray_current': 50,
     'smu_use_bias': True,
     'smu_diode_bias': 50,
-    'smu_current_limit': 1.000000E-04,
+    'smu_current_limit': 1.0E-04,
     'steps_per_mm': 55555.555556,
     'address_x': 1,
     'address_y': 2,
@@ -31,21 +34,26 @@ _local_config = {
 
 # Simple script to measure a beam profile
 scan = xray.utils(**_local_config)
-filename = scan.init(x_range=30, y_range=30, stepsize=1.5, **_local_config)
+filename = scan.init(x_range=10, y_range=10, stepsize=1, **_local_config)
 
 scan.xray_control(shutter='close')
 
-background, std = scan.smu_get_current(10)
-logger.info('background current=%s' % background)
-
 scan.goto_home_position(('x', 'y'))
-# scan._ms_move_abs('y', 1)
-# scan._ms_move_rel('x', 4)
-# scan._ms_move_rel('y', 10)
+# scan._ms_move_abs('x', -0.5)
+# scan._ms_move_rel('x', 1.5)
+# scan._ms_move_rel('y', 1)
+# scan.set_home_position(('x','y'))
+# scan.goto_home_position(('x', 'y'))
+
+background, std = scan.smu_get_current(10)
+logger.info('Background current=%.3e' % background)
 
 scan.xray_control(shutter='open')
 scan.step_scan()
 scan.xray_control(shutter='close')
+
+background_after, std_after = scan.smu_get_current(10)
+logger.info('Background current after scan=%.3e' % background_after)
 
 scan.goto_home_position(('x', 'y'))
 

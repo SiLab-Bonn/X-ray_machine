@@ -46,27 +46,36 @@ class utils():
             'x': kwargs['address_x'],
             'y': kwargs['address_y'],
             'z': kwargs['address_z']
-            }
+        }
         self.invert = {
             'x': kwargs['invert_x'],
             'y': kwargs['invert_y'],
             'z': kwargs['invert_z']
-            }         
+        }
         self.x_range, self.y_range, self.z_height, self.stepsize = x_range, y_range, z_height, stepsize
         self.steps_per_mm = kwargs['steps_per_mm']
         self.debug_motor_res = 0.1
         self.debug_delay = 0
         self.debug_pos_mm = {'x': 0, 'y': 0, 'z': 0}
-        self.filename = os.path.join(kwargs['directory'], kwargs['filename']+'_'+kwargs['distance']+'cm_'+str(x_range)+'_'+str(y_range)+'_'+str(stepsize).replace('.', 'd')+'_'+datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"+'.csv'))
-        logger.info('Filename: '+self.filename)
-        fh = logging.FileHandler(self.filename[:-4]+'.log')
+        self.filename = os.path.join(
+            kwargs['directory'], kwargs['filename'] + '_' +
+            kwargs['distance'] + 'cm_' + str(x_range) + '_' +
+            str(y_range) + '_' + str(stepsize).replace('.', 'd') + '_' + 
+            datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S" + '.csv'))
+
+        logger.info('Filename: ' + self.filename)
+        fh = logging.FileHandler(self.filename[:-4] + '.log')
+        fh.setLevel(logging.INFO)
+        fh.setFormatter(logging.Formatter('%(asctime)s [%(name)-10s] - %(levelname)-7s %(message)s'))
+
         if self.debug is False:
             fh.setLevel(logging.DEBUG)
             self.use_xray_control = kwargs['xray_use_remote']
             self.voltage = kwargs['xray_voltage']
             self.current = kwargs['xray_current']   
             if(kwargs['smu_use_bias'] is True and self.debug is False):
-                self.init_smu(voltage=kwargs['smu_diode_bias'], current_limit=kwargs['smu_current_limit'])
+                self.init_smu(voltage=kwargs['smu_diode_bias'],
+                              current_limit=kwargs['smu_current_limit'])
         logger.addHandler(fh)
 
         return self.filename
@@ -74,8 +83,10 @@ class utils():
     def init_smu(self, voltage=0, current_limit=0):
         logger.info(self.devices['SMU'].get_name())
         self.devices['SMU'].source_volt()
+        self.devices['SMU'].set_avg_on()
+        self.devices['SMU'].set_avg_10()
         self.devices['SMU'].set_current_limit(current_limit)
-        self.devices['SMU'].set_current_sense_range(1E-6)   # 1e-6 is the lowest possible range for the 2410 SMU
+        self.devices['SMU'].set_current_sense_range(1E-6)   # 1e-6 is the lowest possible range
         logger.debug(self.devices['SMU'].get_current_sense_range())
         if (abs(voltage) <= 55):
             self.devices['SMU'].set_voltage(voltage)
@@ -93,12 +104,13 @@ class utils():
             rawdata = []
             for _ in range(n):
                 rawdata.append(float(self.devices['SMU'].get_current()[15:-43]))
-            print(rawdata)
+            logger.debug(rawdata)
             return np.mean(rawdata), np.std(rawdata)
 
     def xray_control(self, voltage=0, current=0, shutter='close'):
         ''' Sets high voltage and current, operate the shutter
-            If no values are given for voltage and current, the local_configuration values are used
+            If no values are given for voltage and current,
+            the local_configuration values are used
         '''
         if self.use_xray_control is False:
             logger.warning('X-ray control is not activated')
@@ -144,11 +156,11 @@ class utils():
         for ax in axis:
             if self.debug is True:
                 position_mm = self.debug_pos_mm[ax]
-                position = position_mm*self.steps_per_mm
+                position = position_mm * self.steps_per_mm
             else:
                 position = int(self.devices['MS'].get_position(address=self.axis[ax]))
-                #position = int(self._ms_write_read("TP", address=self.axis[ax])[2:-3])
-                position_mm = position/self.steps_per_mm
+                # position = int(self._ms_write_read("TP", address=self.axis[ax])[2:-3])
+                position_mm = position / self.steps_per_mm
             logger.debug('Motor stage controller %s position: %s \t %.3f mm' % (ax, position, position_mm))
             return position, position_mm
 
@@ -157,16 +169,16 @@ class utils():
             value = -value
         logger.debug('_ms_move_rel(axis=%s, value=%s, precision=%s)' % (axis, value, precision))
         if self.debug is False:
-            self.devices['MS'].move_relative(value*self.steps_per_mm, address=self.axis[axis])
+            self.devices['MS'].move_relative(value * self.steps_per_mm, address=self.axis[axis])
         if wait is True:
-            self._wait_pos(axis=axis, target=self._ms_get_position(axis=axis)[1]+value)
+            self._wait_pos(axis=axis, target=self._ms_get_position(axis=axis)[1] + value)
 
     def _ms_move_abs(self, axis=None, value=0, precision=0.02, wait=True):
         if self.invert[axis] is True:
             value = -value
         logger.debug('_ms_move_abs(axis=%s, value=%s, precision=%s)' % (axis, value, precision))
         if self.debug is False:
-            self.devices['MS'].set_position(value*self.steps_per_mm, address=self.axis[axis])
+            self.devices['MS'].set_position(value * self.steps_per_mm, address=self.axis[axis])
         if wait is True:
             self._wait_pos(axis=axis, target=value)
 
@@ -226,11 +238,11 @@ class utils():
         logger.debug('step_scan(x_range=%s, y_range=%s, z_height=%s, stepsize=%s, precision=%s, wait=%s):' % (x_range, y_range, z_height, stepsize, precision, wait))
         x_position = self._ms_get_position(axis='x')[1]
         y_position = self._ms_get_position(axis='y')[1]
-        x_start = x_position - x_range/2
-        x_stop = x_position + x_range/2
-        y_start = y_position - y_range/2
-        y_stop = y_position + y_range/2
-        y_steps = int((y_stop - y_start)/stepsize)
+        x_start = x_position - x_range / 2
+        x_stop = x_position + x_range / 2
+        y_start = y_position - y_range / 2
+        y_stop = y_position + y_range / 2
+        y_steps = int((y_stop - y_start) / stepsize)
         logger.info('Scanning range: x=%s mm, y=%s mm, z_height: %s, stepsize=%s mm' % (x_range, y_range, z_height, stepsize))
         logger.debug('x_start=%s, x_stop=%s, y_start=%s, y_stop=%s, y_steps=%s):' % (x_start, x_stop, y_start, y_stop, y_steps))
 
@@ -243,23 +255,23 @@ class utils():
         done = False
 
         while done is False:
-            outerpbar = tqdm(total=self.y_range/self.stepsize, desc='row', position=0)
+            outerpbar = tqdm(total=self.y_range / self.stepsize, desc='row', position=0)
             # move y
-            for indx_y, y_move in enumerate(np.arange(y_start, y_stop+stepsize, stepsize)):
+            for indx_y, y_move in enumerate(np.arange(y_start, y_stop + stepsize, stepsize)):
                 logger.debug('row %s of %s' % (indx_y, y_steps))
                 self._ms_move_abs('y', value=y_move, wait=True)
 
                 if indx_y % 2:
                     x_start_line = x_stop
-                    x_stop_line = x_start-stepsize
+                    x_stop_line = x_start - stepsize
                     stepsize_line = -stepsize
                 else:
                     x_start_line = x_start
-                    x_stop_line = x_stop+stepsize
+                    x_stop_line = x_stop + stepsize
                     stepsize_line = stepsize
 
                 data = []
-                innerpbar = tqdm(total=self.x_range/self.stepsize, desc='column', position=1)
+                innerpbar = tqdm(total=self.x_range / self.stepsize, desc='column', position=1)
 
                 # move x
                 for indx_x, x_move in enumerate(np.arange(x_start_line, x_stop_line, stepsize_line)):
@@ -268,8 +280,8 @@ class utils():
                         time.sleep(0.1)
                         current = self.smu_get_current()
                     else:
-                        x0, y0, fwhm = 0, 0, (x_stop-x_start)/3
-                        current = np.exp(-4*np.log(2) * ((self.debug_pos_mm['x']-x0)**2 + (self.debug_pos_mm['y']-y0)**2) / fwhm**2) * 1e-6
+                        x0, y0, fwhm = 0, 0, (x_stop - x_start) / 3
+                        current = np.exp(-4 * np.log(2) * ((self.debug_pos_mm['x'] - x0)**2 + (self.debug_pos_mm['y'] - y0)**2) / fwhm**2) * 1e-6
                     data.append([round(x_move, 2), round(y_move, 2), current])
                     innerpbar.update()
                 # write the last row and invert order for even rows
