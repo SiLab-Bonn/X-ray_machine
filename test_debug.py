@@ -25,7 +25,7 @@ _local_config = {
 
 # Example (debug mode): Create a new config, specify scanning range and step size
 scan = xray.utils(debug=True, **_local_config)
-filename = scan.init(x_range=10, y_range=10, stepsize=0.5, **_local_config)
+filename = scan.init(x_range=10, y_range=10, stepsize=1, **_local_config)
 
 # Move to home position (motor movement is simulated) and start the scan
 scan.goto_home_position(('x', 'y'))

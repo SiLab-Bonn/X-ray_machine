@@ -59,8 +59,9 @@ class utils():
         self.debug_pos_mm = {'x': 0, 'y': 0, 'z': 0}
         self.filename = os.path.join(
             kwargs['directory'], kwargs['filename'] + '_' +
-            kwargs['distance'] + 'cm_' + str(x_range) + '_' +
-            str(y_range) + '_' + str(stepsize).replace('.', 'd') + '_' + 
+            kwargs['distance'] + 'cm_' + str(x_range) + 'mm_' + str(y_range) + 'mm_' +
+            str(stepsize).replace('.', 'd') + 'mm_' +
+            str(kwargs['xray_voltage']) + 'kV_' + str(kwargs['xray_current']) + 'mA_' +
             datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S" + '.csv'))
 
         logger.info('Filename: ' + self.filename)
@@ -116,6 +117,11 @@ class utils():
             logger.warning('X-ray control is not activated')
             return
 
+        if self.voltage > 40:
+            raise RuntimeError('Voltage above safe limit of 40 kV')
+        if self.current > 50:
+            raise RuntimeError('Current above safe limit of 50 mA')
+
         if voltage == 0 and current == 0:
             try:
                 voltage = self.voltage
@@ -144,7 +150,7 @@ class utils():
         for _ in range(10):
             time.sleep(1)
             xray_i = self.xraymachine["xray_tube"].get_actual_current()
-            logger.warning('X-ray current ramping up: %s mA' % xray_i)
+            logger.warning('X-ray current ramping up/down: %s mA' % xray_i)
             if xray_i == current:
                 break
         if xray_i != current:
