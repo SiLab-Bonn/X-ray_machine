@@ -17,8 +17,8 @@ import logging
 import coloredlogs
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-import matplotlib.patches as patches
 from matplotlib.patches import Circle
+from matplotlib.patches import Rectangle
 from matplotlib.backends.backend_pdf import PdfPages
 from scipy.stats import norm
 
@@ -60,17 +60,17 @@ class plot(object):
             background = np.min(data[2])
         N = int(len(data[2])**.5)
         if unit == 'A':
-            z = scale * (data[2].reshape(N, N) - background)
+            z = np.array(scale * (data[2].reshape(N, N) - background))
         else:
             # calculate the dose rate based on the measured delta current in uA and the diode calibration factor
-            z = scale * (data[2].reshape(N, N) - background) * factor / 1000
+            z = np.array(scale * (data[2].reshape(N, N) - background) * factor / 1000)
 
         return data, N, z
 
     def get_beam_parameters(self, data, z, N):
         (peak_y, peak_x) = np.where(z == np.amax(z))
         xmin, xmax, ymin, ymax = (np.amin(data[0]), np.amax(data[0]), np.amin(data[1]), np.amax(data[1]))
-
+        
         return peak_x, peak_y, xmin, xmax, ymin, ymax
 
     def create_profile_plot(self, data, N, z, name='test', unit='rad'):
@@ -80,25 +80,16 @@ class plot(object):
         fig, ax = plt.subplots()
         im = ax.imshow(np.flip(z, 0), extent=extent, aspect='1', alpha=1)
 
-        ax.set(xlabel='x position [mm]', ylabel='y position [mm]')
-        ax.set_title('Beam profile (' + name + ')', fontsize=9)
-
-        # # Create a Rectangle patch
-        # rect = patches.Rectangle((-5,-10),10,20,linewidth=1,edgecolor='r',facecolor='none')
-
-        # # Add the patch to the Axes
-        # ax.add_patch(rect)
-
         cbar = fig.colorbar(im)
         if unit == 'A':
             label = '$\Delta$ diode current [nA]'
         if unit == 'rad':
             label = 'dose rate in Si$O_2$ [Mrad/h]'
         cbar.ax.set_ylabel(label)
-        plt.savefig(name + '_raw.png', dpi=200)
+        plt.savefig(name+'_raw', dpi=200)
         plt.close('all')
 
-    def create_fancy_profile_plot(self, data, N, z, name='test', unit='rad'):
+    def create_fancy_profile_plot(self, data, N, z, name='test', unit='rad', chip=''):
         left, width = 0.1, 0.65
         bottom, height = 0.13, 0.65
         bottom_h = left_h = left + width + 0.07
@@ -116,38 +107,40 @@ class plot(object):
         fig = plt.figure(figsize=(9, 9))
         axColor = fig.add_axes(rect_color)
 
-        sumx = z[int((N - 1) / 2)]  # p.sum(z, 0)
+        sumx = z[int((N-1)/2)]  # p.sum(z, 0)
         sumxn = sumx / np.amax(sumx)
-        sumy = z.T[int((N - 1) / 2)]  # np.sum(z, 1)
+        sumy = z.T[int((N-1)/2)]  # np.sum(z, 1)
         sumyn = sumy / np.amax(sumy)
 
         # plot image and contour
-        im = plt.imshow(np.flip(z, 0), cmap='viridis', extent=extent, interpolation="bicubic")
-        cset = plt.contour(z / np.amax(z), linewidths=.8, cmap='cividis_r', extent=extent)
+        im = plt.imshow(np.flip(z, 0),cmap='viridis', extent=extent,
+                        interpolation="bicubic")
+        cset = plt.contour(z/np.amax(z), linewidths=.8, cmap='cividis_r', extent=extent)
         axColor.clabel(cset, inline=True, fmt="%1.1f", fontsize=8)
-        axColor.set(xlabel='x position [mm]', ylabel='y position [mm]', title='Beam profile (' + name + ')')
+        axColor.set(xlabel='x position [mm]', ylabel='y position [mm]',
+                    title='Beam profile ('+name+')')
         axColor.title.set_position([0.5, 1.01])
-
-        plt.gca().add_patch(patches.Rectangle((-5, -10), 10, 20, linewidth=1, edgecolor='r', facecolor='none'))
 
         # draw a circle at the peak value
         center_x = 0
         center_y = 0
-        radius = (ymax - ymin) / (N - 1) / 2
-        peak_xx = (xmax - xmin) / N * (peak_x + 0.5) + xmin
-        peak_yy = (ymax - ymin) / N * (peak_y + 0.5) + ymin
+        radius = (ymax-ymin)/(N-1)/2
+        peak_xx = (xmax-xmin) / N * (peak_x+0.5) + xmin
+        peak_yy = (ymax-ymin) / N * (peak_y+0.5) + ymin
 
         circle = Circle((peak_xx, peak_yy), radius, color='red', fill=False)
         if unit == 'rad':
             label = 'peak: %s Mrad/h \nat x=%.1f mm y=%.1f mm'
         if unit == 'A':
             label = 'peak: %s nA \nat x=%.1f mm y=%.1f mm'
-        axColor.legend([circle], [label % (np.round(np.amax(z), 3), peak_xx, peak_yy)])
+        axColor.legend([circle], [label % (np.round(np.amax(z), 2), peak_xx, peak_yy)])
         axColor.add_artist(circle)
 
         # draw a cross hair, indicating the laser position
-        plt.axhline(y=center_y, linewidth=0.5, linestyle='dashed', color='#d62728')
-        plt.axvline(x=center_x, linewidth=0.5, linestyle='dashed', color='#d62728')
+        plt.axhline(y=center_y, linewidth=0.5, linestyle='dashed',
+                    color='#d62728')
+        plt.axvline(x=center_x, linewidth=0.5, linestyle='dashed',
+                    color='#d62728')
 
         # plot cuts
         major_ticks = np.arange(0, 1.1, 0.5)
@@ -178,13 +171,24 @@ class plot(object):
             label = 'dose rate in Si$O_2$ [Mrad/h]'
         cbar = plt.colorbar(im, cax=axCbar, label=label,
                             orientation='horizontal')
-        # cbar.set_ticks(np.arange(np.floor(np.amin(z)), np.ceil(np.amax(z))+0.1, 0.1))
+        #cbar.set_ticks(np.arange(np.floor(np.amin(z)), np.ceil(np.amax(z))+0.1, 0.1))
+
+        # draw the chip outline
+        if chip:
+            sty = {'xy':(chip['pos_x']-chip['size_x']/2, chip['pos_y']-chip['size_y']/2),
+                   'width':chip['size_x'],
+                   'height':chip['size_y'],
+                   'color':'red'}
+
+            axColor.add_artist(Rectangle(sty['xy'], sty['width'], sty['height'], color=sty['color'], fill=False))
+            axHistx.add_artist(Rectangle(sty['xy'], sty['width'], sty['height'], color=sty['color'], fill=True, alpha=0.2))
+            axHisty.add_artist(Rectangle(sty['xy'], sty['width'], sty['height'], color=sty['color'], fill=True, alpha=0.2))
 
         # save the plot
-        plt.savefig(name + '.png', dpi=200)
+        plt.savefig(name, dpi=200)
         plt.close('all')
 
-    def plot_data(self, filename=None, background=0, factor=10, scale=1e9, unit='rad'):
+    def plot_data(self, filename=None, background=0, factor=10, scale=1e9, unit='rad', chip=''):
         ''' Converts rawdata and creates the specified plots
             background: Measured dark current in [A] or 'auto' to use the minimum value as background
             factor: diode calibration factor in [Mrad/h uA]
@@ -193,24 +197,26 @@ class plot(object):
         '''
         # Plot raw data in [A] and before subtracting the background
         data, N, z = self.convert_data(self.load_data(filename), background=0, factor=factor, scale=scale, unit='A')
-        self.create_profile_plot(data, N, np.array(z), name=filename[:-4], unit='A')
-        # Plot the interpolated data in [unit] after subtracting the background
+        self.create_profile_plot(data, N, z, name=filename[:-4], unit='A')
+        # # Plot the interpolated data in [unit] after subtracting the background
         data, N, z = self.convert_data(self.load_data(filename), background=background, factor=factor, scale=scale, unit=unit)
-        self.create_fancy_profile_plot(data, N, np.array(z), name=filename[:-4], unit=unit)
+        self.create_fancy_profile_plot(data, N, z, name=filename[:-4], unit=unit, chip=chip)
 
 
 if __name__ == '__main__':
     beamplot = plot()
 
     # create plots for all files in the given folder
-    path = 'data/calibration'
+    path = 'data/calibration/20cm'
     extension = 'csv'
     os.chdir(path)
     filelist = glob.glob('*.{}'.format(extension))
 
+    rd53a={'pos_x':0, 'pos_y':0, 'size_x':10, 'size_y':20}
+
     for filename in filelist:
         try:
-            beamplot.plot_data(filename=filename, background='auto', unit='rad')
-            logger.info('Processed file ' + filename + "'")
-        except Exception as e:
-            logger.error('Error loading ' + filename, e)
+            beamplot.plot_data(filename=filename, background='auto', unit='rad', chip=rd53a)
+            logger.info('Processed "{}"'.format(filename))
+        except RuntimeError as e:
+            logger.error('Error loading {}/n{}'.format(filename, e))
