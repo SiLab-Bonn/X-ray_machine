@@ -367,6 +367,7 @@ class plotting(object):
 
         fig, ax = plt.subplots()
         im = ax.imshow(np.flip(z, 0), extent=extent, aspect='1', alpha=1)
+        ax.set_title('Beam profile (' + name + ')')
 
         cbar = fig.colorbar(im)
         if unit == 'A':
@@ -374,6 +375,8 @@ class plotting(object):
         if unit == 'rad':
             label = 'dose rate in Si$O_2$ [Mrad/h]'
         cbar.ax.set_ylabel(label, fontsize=8)
+
+        plt.tight_layout()
         plt.savefig(name + '_raw.pdf', dpi=200)
         plt.savefig(name + '_raw.png', dpi=200)
         plt.close('all')
@@ -496,7 +499,7 @@ class plotting(object):
         textstr = '\n'.join((
             r'distance=%.1f cm' % distance,
             r'peak=%.2f Mrad/h' % peak_intensity,
-            r'' + '\n'.join("{!r}%: {:.1f}mm".format(100 * k, v) for k, v in beam_diameter.items()),
+            r'' + '\n'.join("d@{:.0f}%: {:.1f}mm".format(100 * k, v) for k, v in beam_diameter.items()),
             r'DUT={}'.format(chip)))
         props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
         fig.text(0.78, 0.92, textstr, fontsize=13, ha="left", va="center", bbox=props)
@@ -586,7 +589,7 @@ if __name__ == '__main__':
     calibration = {}
 
     # Optionally, draw the DUT outline
-    chip = ''
+    chip = 'none'
 
     for filename in filelist:
         try:
