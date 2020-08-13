@@ -5,22 +5,21 @@
 # ------------------------------------------------------------
 #
 
-import os
-import time
-import datetime
-import math
-import numpy as np
-import tables as tb
 import csv
+import os
+import math
+import pickle
 import logging
 import coloredlogs
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
-import random
-from tqdm import tqdm
-
+import time
+import datetime
+import numpy as np
 from basil.dut import Dut
-import xray_plotting
+from tqdm import tqdm
+import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
+from matplotlib.patches import Rectangle
+from scipy.signal import find_peaks, peak_widths
 
 logger = logging.getLogger(__name__)
 coloredlogs.install(level='INFO', logger=logger)
@@ -303,5 +302,301 @@ class utils():
             done = True
 
 
+class plotting(object):
+    ''' Analysis and plotting functions for beam profiles etc.
+        Can also be run standalone. In this case, all files in the given folder will be plotted and a calibration file along with calibration plots will be generated
+    '''
+
+    # A few examples for DUT dimensions
+    _chip_outlines = {
+        'rd53a': {'pos_x': 0, 'pos_y': 0, 'size_x': 11.6, 'size_y': 20},
+        'itkpix': {'pos_x': 0, 'pos_y': 0, 'size_x': 20, 'size_y': 21},
+        'croc': {'pos_x': 0, 'pos_y': 0, 'size_x': 21.6, 'size_y': 18.6},
+    }
+
+    def __init__(self, filename=None):
+        pass
+
+    def load_data(self, filename=None):
+        data = []
+        with open(filename, mode='r') as csv_file:
+            file_reader = csv.reader(csv_file)
+            data = []
+            for row in file_reader:
+                el = []
+                row_float = []
+                for el in row:
+                    row_float.append(float(el))
+                data.append(row_float)
+            data = np.array(data).T
+
+        return data
+
+    def convert_data(self, data, background=0, factor=1, scale=0, unit='rad'):
+        ''' Converts the raw data in units of [A] or [rad]
+            - background: dark current in [A]
+            - factor: diode calibration factor
+            - scale: adjusts the axis labels
+        '''
+        if background == 'auto':
+            background = np.min(data[2])
+        N = int(len(data[2])**.5)
+        if unit == 'A':
+            z = np.array(scale * (data[2].reshape(N, N) - background))
+        else:
+            # calculate the dose rate based on the measured delta current in uA and the diode calibration factor
+            z = np.array(scale * (data[2].reshape(N, N) - background) * factor / 1000)
+
+        return data, N, z
+
+    def _conv_to_mm(self, pos=0, min=0, max=0, N=1):
+        ''' Map indexed position to mm
+        '''
+        return pos * (max - min) / (N - 1) - abs(min)
+
+    def get_beam_parameters(self, data, z, N):
+        (peak_y, peak_x) = np.where(z == np.amax(z))
+        xmin, xmax, ymin, ymax = (np.amin(data[0]), np.amax(data[0]), np.amin(data[1]), np.amax(data[1]))
+        return peak_x, peak_y, xmin, xmax, ymin, ymax
+
+    def create_profile_plot(self, data, N, z, name='test', unit='rad', distance=0):
+        ''' Simple raw data 2D plot of the diode current or dose rate vs. position
+        '''
+        _, _, xmin, xmax, ymin, ymax = self.get_beam_parameters(data, z, N)
+        extent = np.round((xmin, xmax, ymin, ymax), decimals=1)
+
+        fig, ax = plt.subplots()
+        im = ax.imshow(np.flip(z, 0), extent=extent, aspect='1', alpha=1)
+
+        cbar = fig.colorbar(im)
+        if unit == 'A':
+            label = '$\Delta$ diode current [nA]'
+        if unit == 'rad':
+            label = 'dose rate in Si$O_2$ [Mrad/h]'
+        cbar.ax.set_ylabel(label, fontsize=8)
+        plt.savefig(name + '_raw.pdf', dpi=200)
+        plt.savefig(name + '_raw.png', dpi=200)
+        plt.close('all')
+
+    def create_fancy_profile_plot(self, data, N, z, name='test', unit='rad', chip='', distance=0):
+        ''' Full beam profile plot with analysis
+        '''
+        left, width = 0.1, 0.65
+        bottom, height = 0.13, 0.65
+        bottom_h = left_h = left + width + 0.07
+        cbarHeight = 0.02
+
+        rect_color = [left, bottom, width, height]
+        rect_histx = [left, bottom_h + 0.02, width, 0.15]
+        rect_histy = [left_h, bottom, 0.15, height]
+
+        # get limits from raw data fields
+        peak_x, peak_y, xmin, xmax, ymin, ymax = self.get_beam_parameters(data, z, N)
+        extent = np.round((xmin, xmax, ymin, ymax), decimals=1)
+        histBin = np.linspace(xmin, xmax, N)
+
+        fig = plt.figure(figsize=(9, 9))
+        axColor = fig.add_axes(rect_color)
+
+        sumx = z[int((N - 1) / 2)]  # p.sum(z, 0)
+        sumxn = sumx / np.amax(sumx)
+        sumy = z.T[int((N - 1) / 2)]  # np.sum(z, 1)
+        sumyn = sumy / np.amax(sumy)
+
+        # plot image and contour
+        peak_intensity = np.amax(z)
+        im = plt.imshow(np.flip(z, 0), cmap='viridis', extent=extent, interpolation="bicubic")
+        cset = plt.contour(z / peak_intensity, linewidths=.8, cmap='cividis_r', extent=extent)
+        axColor.clabel(cset, inline=True, fmt="%1.1f", fontsize=8)
+        axColor.set(xlabel='x position [mm]', ylabel='y position [mm]', title='Beam profile (' + name + ')')
+        axColor.title.set_position([0.5, 1.01])
+
+        # draw a circle at the peak value
+        center_x = 0
+        center_y = 0
+        radius = (ymax - ymin) / (N - 1) / 2
+        peak_xx = (xmax - xmin) / N * (peak_x + 0.5) + xmin
+        peak_yy = (ymax - ymin) / N * (peak_y + 0.5) + ymin
+
+        circle = Circle((peak_xx, peak_yy), radius, color='red', fill=False)
+        if unit == 'rad':
+            label = 'peak: %s Mrad/h \nat x=%.1f mm y=%.1f mm'
+        if unit == 'A':
+            label = 'peak: %s nA \nat x=%.1f mm y=%.1f mm'
+        legend_helper = axColor.plot([], marker='o', markerfacecolor='none', markersize=10, linestyle='', color=circle.get_edgecolor())
+        axColor.legend(legend_helper, [label % (np.round(peak_intensity, 2), peak_xx, peak_yy)])
+        axColor.add_artist(circle)
+
+        # draw a cross hair, indicating the laser position
+        plt.axhline(y=center_y, linewidth=0.5, linestyle='dashed', color='#d62728')
+        plt.axvline(x=center_x, linewidth=0.5, linestyle='dashed', color='#d62728')
+
+        # plot cuts
+        major_ticks = np.arange(0, 1.1, 0.5)
+        minor_ticks = np.arange(0, 1.1, 0.25)
+
+        axHistx = fig.add_axes(rect_histx, xlim=(xmin, xmax), ylim=(-0.05, 1.05))
+        axHistx.plot(histBin, sumxn)
+        axHistx.set(ylabel='rel. instensity in x')
+        axHistx.title.set_position([0.4, 1.05])
+        axHistx.set_yticks(major_ticks)
+        axHistx.set_yticks(minor_ticks, minor=True)
+        axHistx.grid(which='minor', alpha=0.2)
+        axHistx.grid(which='major', alpha=0.5)
+
+        thrshld_list = [0.5, 0.2]
+        peaks, _ = find_peaks(sumxn, threshold=0.01)
+        for thrshld in thrshld_list:
+            results_half = peak_widths(sumxn, peaks, rel_height=thrshld)
+            axHistx.plot(histBin[peaks], sumxn[peaks], "x", color="C1")
+            fwhm_line = float(results_half[1:][0]), self._conv_to_mm(float(results_half[1:][1]), ymin, ymax, N), self._conv_to_mm(float(results_half[1:][2]), ymin, ymax, N)
+            axHistx.hlines(*fwhm_line, color="C2")
+
+        axHisty = fig.add_axes(rect_histy, ylim=(ymin, ymax), xlim=(-0.05, 1.05))
+        axHisty.plot(sumyn, histBin)
+        axHisty.set(xlabel='rel. instensity in y')
+        axHisty.title.set_position([0.4, 1.015])
+        axHisty.set_xticks(major_ticks)
+        axHisty.set_xticks(minor_ticks, minor=True)
+        axHisty.grid(which='minor', alpha=0.2)
+        axHisty.grid(which='major', alpha=0.5)
+
+        beam_diameter = {}
+        peaks, _ = find_peaks(sumyn)
+        for thrshld in thrshld_list:
+            results_half = peak_widths(sumyn, peaks, rel_height=thrshld)
+            axHisty.plot(sumyn[peaks], histBin[peaks], "x", color="C1")
+            fwhm_line = float(results_half[1:][0]), self._conv_to_mm(float(results_half[1:][1]), ymin, ymax, N), self._conv_to_mm(float(results_half[1:][2]), ymin, ymax, N)
+            axHisty.vlines(*fwhm_line, color="C2")
+
+            beam_diameter.update({1 - thrshld: (fwhm_line[2] - fwhm_line[1])})
+
+        axCbar = fig.add_axes([left, 0.05, width, cbarHeight])
+        if unit == 'A':
+            label = '$\Delta$ diode current [nA]'
+        if unit == 'rad':
+            label = 'dose rate in Si$O_2$ [Mrad/h]'
+        plt.colorbar(im, cax=axCbar, label=label, orientation='horizontal')
+        # cbar.set_ticks(np.arange(np.floor(np.amin(z)), np.ceil(np.amax(z)) + 0.1, 0.1))
+
+        # draw the chip outline
+        # TODO: Implement chip rotation
+        if chip in self._chip_outlines:
+            sty = {'xy': (self._chip_outlines[chip]['pos_x'] - self._chip_outlines[chip]['size_x'] / 2,
+                          self._chip_outlines[chip]['pos_y'] - self._chip_outlines[chip]['size_y'] / 2),
+                   'width': self._chip_outlines[chip]['size_x'],
+                   'height': self._chip_outlines[chip]['size_y'],
+                   'color': 'red'}
+
+            axColor.add_artist(Rectangle(sty['xy'], sty['width'], sty['height'], color=sty['color'], fill=False))
+            axHistx.add_artist(Rectangle(sty['xy'], sty['width'], sty['height'], color=sty['color'], fill=True, alpha=0.2))
+            axHisty.add_artist(Rectangle(sty['xy'], sty['width'], sty['height'], color=sty['color'], fill=True, alpha=0.2))
+
+        # Summary
+        textstr = '\n'.join((
+            r'distance=%.1f cm' % distance,
+            r'peak=%.2f Mrad/h' % peak_intensity,
+            r'' + '\n'.join("{!r}%: {:.1f}mm".format(100 * k, v) for k, v in beam_diameter.items()),
+            r'DUT={}'.format(chip)))
+        props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+        fig.text(0.78, 0.92, textstr, fontsize=13, ha="left", va="center", bbox=props)
+
+        # save the plot
+        plt.savefig(name + '.pdf', dpi=200)
+        plt.savefig(name + '.png', dpi=200)
+        plt.close('all')
+
+        return peak_intensity, beam_diameter
+
+    def plot_data(self, filename=None, background=0, factor=10, scale=1e9, unit='rad', chip='', distance=0):
+        ''' Converts rawdata and creates the specified plots
+            - background: Measured dark current in [A] or 'auto' to use the minimum value as background
+            - factor: diode calibration factor in [Mrad/h/uA]
+            - scale: scaling factor for plotting
+            - unit: 'rad' or 'A', in case of 'A', the current is plotted
+        '''
+        # Plot raw data in [A] and before subtracting the background
+        data, N, z = self.convert_data(self.load_data(filename), background=0, factor=factor, scale=scale, unit='A')
+        self.create_profile_plot(data, N, z, name=filename[:-4], unit='A', distance=distance)
+        # Plot the interpolated data in [unit] after subtracting the background
+        data, N, z = self.convert_data(self.load_data(filename), background=background, factor=factor, scale=scale, unit=unit)
+        peak_intensity, beam_diameter = self.create_fancy_profile_plot(data, N, z, name=filename[:-4], unit=unit, chip=chip, distance=distance)
+        return peak_intensity, beam_diameter
+
+    def plot_calibration_curves(self, data=None):
+        ''' Plots the extracted peak intensity and beam diameter values
+            - data: Generated by create_fancy_profile_plot() 
+        '''
+        fig, ax = plt.subplots()
+        ax2 = ax.twinx()
+        distance = []
+        peak = []
+        diameters = {}
+
+        for el in data:
+            try:
+                distance.append(el)
+                peak.append(data[el]['peak_intensity'])
+                diameters[el] = data[el]['beam_diameter']
+            except Exception as e:
+                print(e)
+
+        plt.title('Intensity and beam diameter as a function of distance')
+        ax.set_xlabel('distance from collimator holder [cm]', fontsize=10)
+        ax.set_ylabel('peak dose rate in Si$O_2$ [Mrad/h]', fontsize=10)
+        ax2.set_xlabel('distance from collimator holder [cm]', fontsize=10)
+        ax2.set_ylabel('beam diameter [mm]', fontsize=10)
+
+        # Plot the values for different thresholds
+        diameter = []
+        lns = {}
+        for it in [0.5, 0.8]:
+            temp = []
+            for val in diameters:
+                temp.append(diameters[val][it])
+            diameter.append(temp)
+            lns.update({it: ax2.plot(distance, temp, marker='o', label='diameter at {:.0f}% peak intensity'.format(it * 100))})
+
+        lns.update({'peak': ax.plot(distance, peak, marker='o', color='C2', label='peak intensity')})
+
+        print(diameters)
+        plt.fill_between(distance, diameter[0], diameter[1], alpha=0.2)
+
+        # Extract the labels and show them in a combined legend
+        lines = [ln[0] for ln in lns.values()]
+        labels = [ln.get_label() for ln in lines]
+        ax.legend(lines, labels, loc='upper center')
+        ax.grid()
+        plt.tight_layout()
+        plt.savefig('calibration' + '.pdf', dpi=200)
+        plt.savefig('calibration' + '.png', dpi=200)
+        plt.close('all')
+
+
 if __name__ == '__main__':
-    pass
+    # create plots for all files in the given folder and its subfolders
+    path = os.path.join('data', 'calibration')
+    os.chdir(path)
+    filelist = []
+    for dirpath, dirnames, filenames in os.walk("."):
+        for filename in [f for f in filenames if f.endswith('.csv')]:
+            filelist.append(os.path.join(dirpath, filename))
+
+    beamplot = plotting()
+    calibration = {}
+
+    # Optionally, draw the DUT outline
+    chip = ''
+
+    for filename in filelist:
+        try:
+            distance = int(filename.split('/')[1].split('cm')[0])
+            peak_intensity, beam_diameter = beamplot.plot_data(filename=filename, background='auto', unit='rad', chip=chip, distance=distance)
+            calibration.update({distance: {'peak_intensity': peak_intensity, 'beam_diameter': beam_diameter}})
+            logger.info('Processed "{}"'.format(filename))
+        except RuntimeError as e:
+            logger.error('Error loading {}/n{}'.format(filename, e))
+
+    # Save the analyzed calibration data
+    with open('calibration.pkl', 'wb') as f:
+        pickle.dump(calibration, f, pickle.HIGHEST_PROTOCOL)

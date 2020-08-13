@@ -4,7 +4,6 @@ import numpy as np
 
 from basil.dut import Dut
 import xray
-import xray_plotting
 
 logger = logging.getLogger(__name__)
 coloredlogs.install(level='INFO', logger=logger)
@@ -20,7 +19,11 @@ _local_config = {
     'address_z': 3,
     'invert_x': True,
     'invert_y': True,
-    'invert_z': False
+    'invert_z': False,
+
+    'xray_use_remote': False,
+    'xray_voltage': 40,
+    'xray_current': 50
 }
 
 # Example (debug mode): Create a new config, specify scanning range and step size
@@ -32,5 +35,5 @@ scan.goto_home_position(('x', 'y'))
 scan.step_scan()
 
 # Create beam profile plots
-plot = xray_plotting.plot()
+plot = xray.plotting()
 plot.plot_data(filename=filename, background=0, factor=1)

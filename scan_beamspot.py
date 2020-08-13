@@ -1,8 +1,6 @@
 import logging
 import coloredlogs
-import numpy as np
 
-from basil.dut import Dut
 import xray
 from xray import logger
 import xray_plotting

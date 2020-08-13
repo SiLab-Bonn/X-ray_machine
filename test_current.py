@@ -1,11 +1,11 @@
 import csv
 import logging
 import coloredlogs
-
 import xray
 
 logger = logging.getLogger(__name__)
 coloredlogs.install(level='INFO', logger=logger)
+
 
 class scan_beamspot(object):
     pass
