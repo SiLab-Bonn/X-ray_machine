@@ -528,7 +528,7 @@ class plotting(object):
 
     def model_func(self, x, a, b, c):
         # return a / (b * np.power(x, 2)) + c
-        return a * (1 / x) + b * x + c
+        return a / np.power((x + b), 2) + c
 
     def plot_calibration_curves(self, data=None):
         ''' Plots the extracted peak intensity and beam diameter values
@@ -569,17 +569,16 @@ class plotting(object):
             ax2.plot(distance, fits[it](distance), linestyle='--', linewidth=0.75)
             lns.update({it: ax2.plot(distance, temp, linestyle='None', marker='o', markersize=5, color=plt.gca().lines[-1].get_color(), label='d @ {:.0f}% peak intensity ({:.1f}x + {:.1f})'.format((it * 100), coef[0], coef[1]))})
 
-
-#        # Plot intensity vs. distance
+        # Plot intensity vs. distance
         popt, pcov = curve_fit(self.model_func, distance, peak, p0=[1, -2, 1])
         a, b, c = popt
-        print("Optimal parameters are a=%g, b=%g, and c=%g" % (a, b, c))
+        logger.info("Optimal parameters are a=%g, b=%g, and c=%g" % (a, b, c))
         dist_range = np.arange(min(distance), max(distance), 0.1)
         intensity_color = ax2._get_lines.get_next_color()
         ax.plot(dist_range, self.model_func(dist_range, a, b, c), linestyle='--', linewidth=0.75, color=intensity_color)
         fits.update({'peak': [a, b, c]})
 
-        lns.update({'peak': ax.plot(distance, peak, linestyle='None', marker='o', markersize=5, color=intensity_color, label='peak intensity ({:.1f}/x + {:.1f}x + {:.2f})'.format(popt[0], popt[1], popt[2]))})
+        lns.update({'peak': ax.plot(distance, peak, linestyle='None', marker='o', markersize=5, color=intensity_color, label='peak intensity ({:.1f}/(x + {:.1f})² + {:.2f})'.format(popt[0], popt[1], popt[2]))})
         plt.fill_between(distance, diameter[0], diameter[1], alpha=0.2)
 
         # Extract the labels and show them in a combined legend
