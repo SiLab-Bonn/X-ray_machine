@@ -2,8 +2,6 @@ import logging
 import coloredlogs
 import xray
 from xray import logger
-import xray_plotting
-
 
 local_logger = logging.getLogger('scan')
 local_logger.setLevel('INFO')
@@ -16,9 +14,9 @@ _local_config = {
     'factor': 9.76,
     'xray_use_remote': False,
     'xray_voltage': 40,
-    'xray_current': 3,
+    'xray_current': 0,
     'smu_use_bias': True,
-    'smu_diode_bias': 50,
+    'smu_diode_bias': -5,
     'smu_current_limit': 1.0E-04,
     'steps_per_mm': 55555.555556,
     'address_x': 1,
@@ -34,18 +32,13 @@ scan = xray.utils(**_local_config)
 filename = scan.init(x_range=10, y_range=10, stepsize=1, **_local_config)
 
 scan.goto_home_position(('x', 'y'))
-# scan._ms_move_abs('x', 0)
-# scan._ms_move_rel('x', 2)
-# scan._ms_move_rel('y', -2)
-# scan.set_home_position(('x', 'y'))
-# scan.goto_home_position(('x', 'y'))
 
 scan.step_scan()
 
 scan.goto_home_position(('x', 'y'))
 
 # generate plots
-plot = xray_plotting.plot()
+plot = xray.plotting()
 try:
     plot.plot_data(filename=filename, unit='A')
 except RuntimeError as e:

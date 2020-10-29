@@ -1,10 +1,7 @@
 import logging
 import coloredlogs
-
 import xray
 from xray import logger
-import xray_plotting
-
 
 local_logger = logging.getLogger('scan')
 local_logger.setLevel('INFO')
@@ -19,8 +16,8 @@ _local_config = {
     'xray_voltage': 40,
     'xray_current': 50,
     'smu_use_bias': True,
-    'smu_diode_bias': 50,
-    'smu_current_limit': 1.0E-04,
+    'smu_diode_bias': -50,
+    'smu_current_limit': 1.0E-05,
     'steps_per_mm': 55555.555556,
     'address_x': 1,
     'address_y': 2,
@@ -32,7 +29,7 @@ _local_config = {
 
 # Simple script to measure a beam profile
 scan = xray.utils(**_local_config)
-filename = scan.init(x_range=40, y_range=40, stepsize=1, **_local_config)
+filename = scan.init(x_range=40, y_range=40, stepsize=2, **_local_config)
 
 scan.xray_control(shutter='close')
 scan.goto_home_position(('x', 'y'))
@@ -50,7 +47,7 @@ logger.info('Background current after scan=%.3e A' % background_after)
 scan.goto_home_position(('x', 'y'))
 
 # generate plots
-plot = xray_plotting.plot()
+plot = xray.plotting()
 try:
     plot.plot_data(filename=filename, background=background, factor=_local_config['factor'], unit='rad')
 except RuntimeError as e:

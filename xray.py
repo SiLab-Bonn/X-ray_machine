@@ -15,6 +15,7 @@ import datetime
 import numpy as np
 from basil.dut import Dut
 from tqdm import tqdm
+import itertools
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from matplotlib.patches import Rectangle
@@ -83,29 +84,34 @@ class utils():
     def init_smu(self, voltage=0, current_limit=0):
         logger.info(self.devices['SMU'].get_name())
         self.devices['SMU'].source_volt()
-        self.devices['SMU'].set_avg_on()
-        self.devices['SMU'].set_avg_10()
+        self.devices['SMU'].set_avg_en(1)
+        self.devices['SMU'].set_avg_n(10)
         self.devices['SMU'].set_current_limit(current_limit)
         self.devices['SMU'].set_current_sense_range(1E-6)   # 1e-6 is the lowest possible range
+        self.devices['SMU'].set_beeper(0)
         logger.debug(self.devices['SMU'].get_current_sense_range())
         if (abs(voltage) <= 55):
             self.devices['SMU'].set_voltage(voltage)
-            self.devices['SMU'].on()
         else:
             logger.exception('SMU Voltage %s out of range' % voltage)
 
-    def smu_get_current(self, n=None):
+    def smu_get_current(self, n=1):
         ''' Returns the mean and sigma of n consecutive measurements
             For a single measurement, leave n empty
         '''
-        if n is None:
-            return float(self.devices['SMU'].get_current()[15:-43])
-        else:
-            rawdata = []
-            for _ in range(n):
-                rawdata.append(float(self.devices['SMU'].get_current()[15:-43]))
-            logger.debug(rawdata)
+        rawdata = []
+        for _ in range(n):
+            self.devices['SMU'].on()
+            time.sleep(.1)
+            rawdata.append(float(self.devices['SMU'].get_current()[15:-43]))
+            self.devices['SMU'].off()
+            time.sleep(.1)
+        
+        logger.debug(rawdata)
+        if n >1:
             return np.mean(rawdata), np.std(rawdata)
+        else:
+            return rawdata[0]
 
     def xray_control(self, voltage=0, current=0, shutter='close'):
         ''' Sets high voltage and current, operate the shutter
@@ -310,7 +316,7 @@ class plotting(object):
     # A few examples for DUT dimensions
     _chip_outlines = {
         'rd53a': {'pos_x': 0, 'pos_y': 0, 'size_x': 11.6, 'size_y': 20},
-        'itkpix': {'pos_x': 0, 'pos_y': 0, 'size_x': 20, 'size_y': 21},
+        'itkpix': {'pos_x': -5, 'pos_y': 0, 'size_x': 20, 'size_y': 21},
         'croc': {'pos_x': 0, 'pos_y': 0, 'size_x': 21.6, 'size_y': 18.6},
     }
 
@@ -448,12 +454,19 @@ class plotting(object):
         axHistx.grid(which='major', alpha=0.5)
 
         thrshld_list = [0.5, 0.2]
-        peaks, _ = find_peaks(sumxn, threshold=0.01)
+        peaks, _ = find_peaks(sumxn, prominence=1, threshold=0.01)
         for thrshld in thrshld_list:
-            results_half = peak_widths(sumxn, peaks, rel_height=thrshld)
-            axHistx.plot(histBin[peaks], sumxn[peaks], "x", color="C1")
-            fwhm_line = float(results_half[1:][0]), self._conv_to_mm(float(results_half[1:][1]), ymin, ymax, N), self._conv_to_mm(float(results_half[1:][2]), ymin, ymax, N)
-            axHistx.hlines(*fwhm_line, color="C2")
+            try:
+                results_half = peak_widths(sumxn, peaks, rel_height=thrshld)
+                leng = len(results_half[0])
+                if leng > 1:
+                    ret = (results_half[i][-1] for i in range(len(results_half)))
+                    results_half = list(ret)
+                axHistx.plot(histBin[peaks], sumxn[peaks], "x", color="C1")
+                fwhm_line = float(results_half[1:][0]), self._conv_to_mm(float(results_half[1:][1]), ymin, ymax, N), self._conv_to_mm(float(results_half[1:][2]), ymin, ymax, N)
+                axHistx.hlines(*fwhm_line, color="C2")
+            except Exception as e:
+                print(e)
 
         axHisty = fig.add_axes(rect_histy, ylim=(ymin, ymax), xlim=(-0.05, 1.05))
         axHisty.plot(sumyn, histBin)
@@ -465,14 +478,20 @@ class plotting(object):
         axHisty.grid(which='major', alpha=0.5)
 
         beam_diameter = {}
-        peaks, _ = find_peaks(sumyn)
+        peaks, _ = find_peaks(sumyn, distance=10)
         for thrshld in thrshld_list:
-            results_half = peak_widths(sumyn, peaks, rel_height=thrshld)
-            axHisty.plot(sumyn[peaks], histBin[peaks], "x", color="C1")
-            fwhm_line = float(results_half[1:][0]), self._conv_to_mm(float(results_half[1:][1]), ymin, ymax, N), self._conv_to_mm(float(results_half[1:][2]), ymin, ymax, N)
-            axHisty.vlines(*fwhm_line, color="C2")
-
-            beam_diameter.update({1 - thrshld: (fwhm_line[2] - fwhm_line[1])})
+            try:
+                results_half = peak_widths(sumyn, peaks, rel_height=thrshld)
+                leng = len(results_half[0])
+                if leng > 1:
+                    ret = (results_half[i][-1] for i in range(len(results_half)))
+                    results_half = list(ret)
+                axHisty.plot(sumyn[peaks], histBin[peaks], "x", color="C1")
+                fwhm_line = float(results_half[1:][0]), self._conv_to_mm(float(results_half[1:][1]), ymin, ymax, N), self._conv_to_mm(float(results_half[1:][2]), ymin, ymax, N)
+                axHisty.vlines(*fwhm_line, color="C2")
+                beam_diameter.update({1 - thrshld: (fwhm_line[2] - fwhm_line[1])})
+            except Exception as e:
+                print(e)
 
         axCbar = fig.add_axes([left, 0.05, width, cbarHeight])
         if unit == 'A':
@@ -570,7 +589,7 @@ class plotting(object):
             lns.update({it: ax2.plot(distance, temp, linestyle='None', marker='o', markersize=5, color=plt.gca().lines[-1].get_color(), label='d @ {:.0f}% peak intensity ({:.1f}x + {:.1f})'.format((it * 100), coef[0], coef[1]))})
 
         # Plot intensity vs. distance
-        popt, pcov = curve_fit(self.model_func, distance, peak, p0=[1, -2, 1])
+        popt, pcov = curve_fit(self.model_func, distance, peak, p0=[0, -2, 1], maxfev=1000)
         a, b, c = popt
         logger.info("Optimal parameters are a=%g, b=%g, and c=%g" % (a, b, c))
         dist_range = np.arange(min(distance), max(distance), 0.1)
@@ -608,7 +627,7 @@ if __name__ == '__main__':
 
     for filename in filelist:
         try:
-            distance = int(filename.split('/')[1].split('cm')[0])
+            distance = int(filename.split('_')[1].split('cm')[0])
             beamplot.plot_data(filename=filename, background='auto', unit='rad', chip=chip, distance=distance)
             logger.info('Processed "{}"'.format(filename))
         except RuntimeError as e:
