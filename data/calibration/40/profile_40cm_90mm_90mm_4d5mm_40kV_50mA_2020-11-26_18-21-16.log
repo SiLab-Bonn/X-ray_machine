@@ -1,0 +1,17 @@
+2020-11-26 18:21:17,857 [xray      ] - WARNING X-ray voltage adjusing: 40.0 kV
+2020-11-26 18:21:17,857 [xray      ] - INFO    X-ray voltage set to 40.0 kV
+2020-11-26 18:21:18,960 [xray      ] - WARNING X-ray current ramping up/down: 50.0 mA
+2020-11-26 18:21:18,961 [xray      ] - INFO    X-ray current set to 50.0 mA
+2020-11-26 18:21:18,961 [xray      ] - INFO    Moving to home position
+2020-11-26 18:21:29,382 [xray      ] - INFO    Background current=3.425e-08 A
+2020-11-26 18:21:30,510 [xray      ] - WARNING X-ray voltage adjusing: 40.0 kV
+2020-11-26 18:21:30,510 [xray      ] - INFO    X-ray voltage set to 40.0 kV
+2020-11-26 18:21:31,613 [xray      ] - WARNING X-ray current ramping up/down: 50.0 mA
+2020-11-26 18:21:31,614 [xray      ] - INFO    X-ray current set to 50.0 mA
+2020-11-26 18:21:31,677 [xray      ] - INFO    Scanning range: x=90 mm, y=90 mm, z_height: False, stepsize=4.5 mm
+2020-11-26 19:13:48,914 [xray      ] - WARNING X-ray voltage adjusing: 40.0 kV
+2020-11-26 19:13:48,914 [xray      ] - INFO    X-ray voltage set to 40.0 kV
+2020-11-26 19:13:50,034 [xray      ] - WARNING X-ray current ramping up/down: 50.0 mA
+2020-11-26 19:13:50,034 [xray      ] - INFO    X-ray current set to 50.0 mA
+2020-11-26 19:14:00,310 [xray      ] - INFO    Background current after scan=3.535e-08 A
+2020-11-26 19:14:00,310 [xray      ] - INFO    Moving to home position

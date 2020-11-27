@@ -597,7 +597,7 @@ class plotting(object):
         ax.plot(dist_range, self.model_func(dist_range, a, b, c), linestyle='--', linewidth=0.75, color=intensity_color)
         fits.update({'peak': [a, b, c]})
 
-        lns.update({'peak': ax.plot(distance, peak, linestyle='None', marker='o', markersize=5, color=intensity_color, label='peak intensity ({:.1f}/(x + {:.1f})² + {:.2f})'.format(popt[0], popt[1], popt[2]))})
+        lns.update({'peak': ax.plot(distance, peak, linestyle='None', marker='o', markersize=5, color=intensity_color, label='peak intensity ({:.1f}/(x + {:.1f}) + {:.2f})'.format(popt[0], popt[1], popt[2]))})
         plt.fill_between(distance, diameter[0], diameter[1], alpha=0.2)
 
         # Extract the labels and show them in a combined legend
