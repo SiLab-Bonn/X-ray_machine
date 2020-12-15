@@ -42,4 +42,4 @@ with open(calibration_filename, 'wb') as f:
 with open(calibration_filename, 'rb') as f:
     data = pickle.load(f)
     sorted_data = {k: v for k, v in sorted(data.items(), key=lambda item: item[0])}
-    xplt.plot_calibration_curves(sorted_data)
+    xplt.plot_calibration_curves(path=path, data=sorted_data)
