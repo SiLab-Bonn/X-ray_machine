@@ -20,20 +20,15 @@ coloredlogs.install(level='INFO', logger=logger)
 
 path = os.path.join('data', 'calibration')
 calibration_filename = 'calibration.pkl'
-os.chdir(path)
 
 xplt = xray.plotting()
-
-filelist = []
-for dirpath, dirnames, filenames in os.walk("."):
-    for filename in [f for f in filenames if f.endswith('.csv')]:
-        filelist.append(os.path.join(dirpath, filename))
+filelist = xplt._create_filelist(path=path)
 
 calibration = {}
 
 for filename in filelist:
     try:
-        distance = int(filename.split('/')[1].split('cm')[0])
+        distance = int(filename.split('/')[-1].split('cm')[0].split('_')[-1])
         peak_intensity, beam_diameter = xplt.plot_data(filename=filename, background='auto', unit='rad', chip='none', distance=distance)
         calibration.update({distance: {'peak_intensity': peak_intensity, 'beam_diameter': beam_diameter}})
         logger.info('Processed "{}"'.format(filename))

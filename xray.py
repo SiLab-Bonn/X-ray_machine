@@ -610,24 +610,29 @@ class plotting(object):
         plt.savefig('calibration' + '.png', dpi=200)
         plt.close('all')
 
+    def _create_filelist(self, path=''):
+        try:
+            filelist = []
+            for dirpath, dirnames, filenames in os.walk(path):
+                for filename in [f for f in filenames if f.endswith('.csv')]:
+                    if not '.' in dirpath:
+                        filelist.append(os.path.join(dirpath, filename))
+            return filelist
+        except Exception as e:
+            logger.exception('Error creating file list:' + e)
+
 
 if __name__ == '__main__':
-    # create plots for all files in the given folder and its subfolders
-    path = os.path.join('data', 'calibration')
-    os.chdir(path)
-    filelist = []
-    for dirpath, dirnames, filenames in os.walk("."):
-        for filename in [f for f in filenames if f.endswith('.csv')]:
-            filelist.append(os.path.join(dirpath, filename))
-
-    beamplot = plotting()
-
     # Optionally, draw the DUT outline
     chip = 'none'
 
+    # create plots for all files in the given folder and its subfolders
+    beamplot = plotting()
+    filelist = beamplot._create_filelist(path=os.path.join('data', 'calibration'))
+
     for filename in filelist:
         try:
-            distance = int(filename.split('_')[1].split('cm')[0])
+            distance = int(filename.split('_')[1].split('cm')[0].split('_')[-1])
             beamplot.plot_data(filename=filename, background='auto', unit='rad', chip=chip, distance=distance)
             logger.info('Processed "{}"'.format(filename))
         except RuntimeError as e:
