@@ -1,5 +1,6 @@
 import logging
 import coloredlogs
+from matplotlib.pyplot import sca
 import xray
 from xray import logger
 
@@ -8,13 +9,14 @@ local_logger.setLevel('INFO')
 coloredlogs.install(level='INFO', logger=local_logger)
 
 _local_config = {
-    'directory': 'data/calibration',
+    'directory': 'data/tests',
     'filename': 'laser',
-    'distance': '20',
+    'distance': '14',
     'factor': 9.76,
     'xray_use_remote': False,
     'xray_voltage': 40,
     'xray_current': 0,
+    'smu_init' : True,
     'smu_use_bias': True,
     'smu_diode_bias': -5,
     'smu_current_limit': 1.0E-04,
@@ -29,12 +31,16 @@ _local_config = {
 
 # Simple script to calibrate the alignment laser
 scan = xray.utils(**_local_config)
-filename = scan.init(x_range=10, y_range=10, stepsize=1, **_local_config)
+filename = scan.init(x_range=5, y_range=5, stepsize=1, **_local_config)
 
+# input("Press Enter to home...")
 scan.goto_home_position(('x', 'y'))
 
-scan.step_scan()
+# input("Press Enter to start the scan...")
+scan.step_scan(factor=_local_config['factor'],
+                background='minimum')
 
+# input("Press Enter to home again...")
 scan.goto_home_position(('x', 'y'))
 
 # generate plots

@@ -69,12 +69,12 @@ class utils():
         fh.setLevel(logging.INFO)
         fh.setFormatter(logging.Formatter('%(asctime)s [%(name)-10s] - %(levelname)-7s %(message)s'))
 
-        if self.debug is False:
+        if self.debug is False and kwargs['smu_init'] is True:
             fh.setLevel(logging.DEBUG)
             self.use_xray_control = kwargs['xray_use_remote']
             self.voltage = kwargs['xray_voltage']
             self.current = kwargs['xray_current']   
-            if(kwargs['smu_use_bias'] is True and self.debug is False):
+            if(kwargs['smu_use_bias'] is True):
                 self.init_smu(voltage=kwargs['smu_diode_bias'],
                               current_limit=kwargs['smu_current_limit'])
         logger.addHandler(fh)
@@ -87,7 +87,7 @@ class utils():
         self.devices['SMU'].set_avg_en(1)
         self.devices['SMU'].set_avg_n(10)
         self.devices['SMU'].set_current_limit(current_limit)
-        self.devices['SMU'].set_current_sense_range(1E-6)   # 1e-6 is the lowest possible range
+        self.devices['SMU'].set_current_sense_range(1E-5)   # 1e-6 is the lowest possible range
         self.devices['SMU'].set_beeper(0)
         logger.debug(self.devices['SMU'].get_current_sense_range())
         if (abs(voltage) <= 55):
@@ -103,7 +103,10 @@ class utils():
         for _ in range(n):
             self.devices['SMU'].on()
             time.sleep(.1)
-            rawdata.append(float(self.devices['SMU'].get_current()))
+            reading = self.devices['SMU'].get_current()
+            if ',' in reading:  # for older SMUs
+                reading = reading.split(',')[1]
+            rawdata.append(abs(float(reading)))
             self.devices['SMU'].off()
             time.sleep(.1)
         
@@ -244,7 +247,7 @@ class utils():
             logger.warning('Set new home position for %s-axis)' % ax)
             self.devices['MS']._write_command('DH', self.axis[ax])
 
-    def step_scan(self, precision=0.02, wait=True):
+    def step_scan(self, precision=0.02, wait=True, factor='none', background='none'):
         x_range, y_range, z_height, stepsize = self.x_range, self.y_range, self.z_height, self.stepsize
         logger.debug('step_scan(x_range=%s, y_range=%s, z_height=%s, stepsize=%s, precision=%s, wait=%s):' % (x_range, y_range, z_height, stepsize, precision, wait))
         x_position = self._ms_get_position(axis='x')[1]
@@ -256,6 +259,12 @@ class utils():
         y_steps = int((y_stop - y_start) / stepsize)
         logger.info('Scanning range: x=%s mm, y=%s mm, z_height: %s, stepsize=%s mm' % (x_range, y_range, z_height, stepsize))
         logger.debug('x_start=%s, x_stop=%s, y_start=%s, y_stop=%s, y_steps=%s):' % (x_start, x_stop, y_start, y_stop, y_steps))
+
+        with open(self.filename, mode='a') as csv_file:
+            header_writer = csv.writer(csv_file)
+            header_writer.writerow(('factor', factor))
+            header_writer.writerow(('background', background))
+            csv_file.close()
 
         self._ms_move_abs('x', value=x_start, wait=True)
         self._ms_move_abs('y', value=y_start, wait=True)
@@ -328,23 +337,34 @@ class plotting(object):
         with open(filename, mode='r') as csv_file:
             file_reader = csv.reader(csv_file)
             data = []
+            factor = 'none'
+            background = 'none'
             for row in file_reader:
                 el = []
                 row_float = []
+                if row[0] == 'factor':
+                    factor = float(row[1])
+                    continue
+                if row[0] == 'background':
+                    background = float(row[1]) if row[1] != 'minimum' else row[1]  # if no background current is available
+                    continue
                 for el in row:
                     row_float.append(float(el))
                 data.append(row_float)
             data = np.array(data).T
             csv_file.close()
-        return data
+        return data, factor, background
 
-    def convert_data(self, data, background=0, factor=1, scale=0, unit='rad'):
+    def convert_data(self, data, background, factor, scale=0, unit='rad'):
         ''' Converts the raw data in units of [A] or [rad]
             - background: dark current in [A]
             - factor: diode calibration factor
             - scale: adjusts the axis labels
         '''
-        if background == 'auto':
+        if not isinstance(factor, float):
+            raise TypeError("A calibration factor must be provided. {} is invalid".format(factor))
+
+        if background == 'minimum':
             background = np.min(data[2])
         N = int(len(data[2])**.5)
         if unit == 'A':
@@ -373,7 +393,7 @@ class plotting(object):
 
         fig, ax = plt.subplots()
         im = ax.imshow(np.flip(z, 0), extent=extent, aspect='1', alpha=1)
-        ax.set_title('Beam profile (' + name + ')')
+        ax.set_title('Beam profile (' + name + ')', fontsize=8)
 
         cbar = fig.colorbar(im)
         if unit == 'A':
@@ -384,6 +404,7 @@ class plotting(object):
 
         plt.tight_layout()
         plt.savefig(name + '_raw.pdf', dpi=200)
+        plt.savefig('last.pdf', dpi=200)
         plt.savefig(name + '_raw.png', dpi=200)
         plt.close('all')
 
@@ -433,7 +454,7 @@ class plotting(object):
         if unit == 'A':
             label = 'peak: %s nA \nat x=%.1f mm y=%.1f mm'
         legend_helper = axColor.plot([], marker='o', markerfacecolor='none', markersize=10, linestyle='', color=circle.get_edgecolor())
-        axColor.legend(legend_helper, [label % (np.round(peak_intensity, 2), peak_xx, peak_yy)])
+        axColor.legend(legend_helper, [label % (np.round(peak_intensity, 3), peak_xx, peak_yy)])
         axColor.add_artist(circle)
 
         # draw a cross hair, indicating the laser position
@@ -530,18 +551,36 @@ class plotting(object):
 
         return peak_intensity, beam_diameter
 
-    def plot_data(self, filename=None, background=0, factor=10, scale=1e9, unit='rad', chip='', distance=0):
+    def plot_data(self, filename=None, background='minimum', factor=0, scale=1e9, unit='rad', chip='', distance=0):
         ''' Converts rawdata and creates the specified plots
-            - background: Measured dark current in [A] or 'auto' to use the minimum value as background
+            - background: Measured dark current in [A] or 'minimum' to use the minimum value as background
             - factor: diode calibration factor in [Mrad/h/uA]
             - scale: scaling factor for plotting
             - unit: 'rad' or 'A', in case of 'A', the current is plotted
         '''
-        # Plot raw data in [A] and before subtracting the background
-        data, N, z = self.convert_data(self.load_data(filename), background=0, factor=factor, scale=scale, unit='A')
+        # Plot raw data in [A] after subtracting the background
+        raw_data, recorded_factor, recorded_background = self.load_data(filename)
+        data, N, z = self.convert_data(raw_data,
+                                        background=background if recorded_background is 'none' else recorded_background,
+                                        factor=factor if recorded_factor is 'none' else recorded_factor,
+                                        scale=scale,
+                                        unit='A')
+#        if distance == 60:
+#            self.create_profile_plot(data, N, z.T, name=filename[:-4], unit='A', distance=distance)
+#        else:
         self.create_profile_plot(data, N, z, name=filename[:-4], unit='A', distance=distance)
+
         # Plot the interpolated data in [unit] after subtracting the background
-        data, N, z = self.convert_data(self.load_data(filename), background=background, factor=factor, scale=scale, unit=unit)
+        raw_data, recorded_factor, recorded_background = self.load_data(filename)
+        data, N, z = self.convert_data(raw_data,
+                                        background=background if recorded_background is 'none' else recorded_background,
+                                        factor=factor if recorded_factor is 'none' else recorded_factor,
+                                        scale=scale,
+                                        unit=unit)
+#        if distance == 60:
+#            peak_intensity, beam_diameter = self.create_fancy_profile_plot(data, N, z.T, name=filename[:-4], unit=unit, chip=chip, distance=distance)
+#        else:
+
         peak_intensity, beam_diameter = self.create_fancy_profile_plot(data, N, z, name=filename[:-4], unit=unit, chip=chip, distance=distance)
         return peak_intensity, beam_diameter
 
@@ -626,14 +665,17 @@ if __name__ == '__main__':
     # Optionally, draw the DUT outline
     chip = 'none'
 
+    # Calibration factor of the used diode. Ignored, if the recorded raw data file includes the factor.
+    factor = 9.76
+
     # create plots for all files in the given folder and its subfolders
     beamplot = plotting()
-    filelist = beamplot._create_filelist(path=os.path.join('data', 'calibration'))
+    filelist = beamplot._create_filelist(path=os.path.join('data', 'calibration2022'))
 
     for filename in filelist:
         try:
             distance = int(filename.split('_')[1].split('cm')[0].split('_')[-1])
-            beamplot.plot_data(filename=filename, background='auto', unit='rad', chip=chip, distance=distance)
+            beamplot.plot_data(filename=filename, background='minimum', factor=factor, unit='rad', chip=chip, distance=distance)
             logger.info('Processed "{}"'.format(filename))
         except RuntimeError as e:
             logger.error('Error loading {}/n{}'.format(filename, e))
