@@ -2,24 +2,38 @@ transfer_layer:
   - name     : Serial_SMU
     type     : Serial
     init     :
-        port     : /dev/ttyUSB1
-        read_termination : "\r"
+        port     : /dev/ttyUSB0  # FT232RL
+        read_termination : "\n"
         baudrate : 19200
+  # - name     : Visa
+  #   type     : Visa
+  #   init     :
+  #       # resource_name     : TCPIP::192.168.10.114::INSTR
+  #       resource_name     : USB0::1510::9296::04039405::0::INSTR  ### Keithley 2450
+  #       # resource_name     : USB0::1510::9312::04063140::0::INSTR  ### Keithley 2460
+  #       backend           : "@py"
+  #       query_delay       : 0.1
 
   - name     : Serial_MS
     type     : Serial
     init     :
-        port     : /dev/ttyUSB0
+        port     : /dev/ttyUSB1
         read_termination : "\x03"
         baudrate : 9600
-        timeout : 0.1
+        timeout : 0.2
 
 hw_drivers:
   - name      : SMU
     type      : scpi
     interface : Serial_SMU
     init      :
-        device : Keithley 2410
+        device : Keithley 2400
+
+  # - name      : SMU
+  #   type      : scpi
+  #   interface : Visa
+  #   init      :
+  #       device : Keithley 2450
 
   - name      : MS
     type      : mercury

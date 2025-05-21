@@ -2,7 +2,7 @@ transfer_layer:
   - name     : Serial
     type     : Serial
     init     :
-        port     : /dev/ttyUSB2
+        port     : /dev/ttyUSB2  # FT232R
         read_termination : "\r"
         baudrate : 9600
         timeout : 2.0

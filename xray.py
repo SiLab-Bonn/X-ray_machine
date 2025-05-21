@@ -87,9 +87,10 @@ class utils():
         self.devices['SMU'].set_avg_en(1)
         self.devices['SMU'].set_avg_n(10)
         self.devices['SMU'].set_current_limit(current_limit)
-        self.devices['SMU'].set_current_sense_range(1E-5)   # 1e-6 is the lowest possible range
+        # self.devices['SMU'].set_current_sense_range(1E-5)   # 1e-6 is the lowest possible range
+        # self.devices['SMU'].set_voltage_range(200)
         self.devices['SMU'].set_beeper(0)
-        logger.debug(self.devices['SMU'].get_current_sense_range())
+        # logger.debug(self.devices['SMU'].get_current_sense_range())
         if (abs(voltage) <= 55):
             self.devices['SMU'].set_voltage(voltage)
         else:
@@ -127,8 +128,8 @@ class utils():
 
         if self.voltage > 40:
             raise RuntimeError('Voltage above safe limit of 40 kV')
-        if self.current > 50:
-            raise RuntimeError('Current above safe limit of 50 mA')
+        if self.current > 75:
+            raise RuntimeError('Current above safe limit of 75 mA')
 
         if voltage == 0 and current == 0:
             try:
@@ -172,8 +173,8 @@ class utils():
                 position_mm = self.debug_pos_mm[ax]
                 position = position_mm * self.steps_per_mm
             else:
-                position = int(self.devices['MS'].get_position(address=self.axis[ax]))
-                # position = int(self._ms_write_read("TP", address=self.axis[ax])[2:-3])
+                position = int(self.devices['MS'].get_position(board_number=self.axis[ax]))
+                # position = int(self._ms_write_read("TP", board_number=self.axis[ax])[2:-3])
                 position_mm = position / self.steps_per_mm
             logger.debug('Motor stage controller %s position: %s \t %.3f mm' % (ax, position, position_mm))
             return position, position_mm
@@ -183,7 +184,7 @@ class utils():
             value = -value
         logger.debug('_ms_move_rel(axis=%s, value=%s, precision=%s)' % (axis, value, precision))
         if self.debug is False:
-            self.devices['MS'].move_relative(value * self.steps_per_mm, address=self.axis[axis])
+            self.devices['MS'].move_relative(value * self.steps_per_mm, board_number=self.axis[axis])
         if wait is True:
             self._wait_pos(axis=axis, target=self._ms_get_position(axis=axis)[1] + value)
 
@@ -192,7 +193,7 @@ class utils():
             value = -value
         logger.debug('_ms_move_abs(axis=%s, value=%s, precision=%s)' % (axis, value, precision))
         if self.debug is False:
-            self.devices['MS'].set_position(value * self.steps_per_mm, address=self.axis[axis])
+            self.devices['MS'].set_position(value * self.steps_per_mm, board_number=self.axis[axis])
         if wait is True:
             self._wait_pos(axis=axis, target=value)
 
@@ -237,7 +238,11 @@ class utils():
         logger.info('Moving to home position')
         if self.debug is False:
             for ax in axis:
+                # self.devices['MS']._write_command('RT', self.axis[ax])
                 self.devices['MS']._write_command('GH', self.axis[ax])
+                # print(self.devices['MS'].get_version())
+                # print(self.devices['MS'].get_checksum())
+                print(self.devices['MS'].get_channel())
         if wait is True:
             for ax in axis:
                 self._wait_pos(ax)
@@ -561,8 +566,8 @@ class plotting(object):
         # Plot raw data in [A] after subtracting the background
         raw_data, recorded_factor, recorded_background = self.load_data(filename)
         data, N, z = self.convert_data(raw_data,
-                                        background=background if recorded_background is 'none' else recorded_background,
-                                        factor=factor if recorded_factor is 'none' else recorded_factor,
+                                        background=background if recorded_background == 'none' else recorded_background,
+                                        factor=factor if recorded_factor == 'none' else recorded_factor,
                                         scale=scale,
                                         unit='A')
 #        if distance == 60:
@@ -573,8 +578,8 @@ class plotting(object):
         # Plot the interpolated data in [unit] after subtracting the background
         raw_data, recorded_factor, recorded_background = self.load_data(filename)
         data, N, z = self.convert_data(raw_data,
-                                        background=background if recorded_background is 'none' else recorded_background,
-                                        factor=factor if recorded_factor is 'none' else recorded_factor,
+                                        background=background if recorded_background == 'none' else recorded_background,
+                                        factor=factor if recorded_factor == 'none' else recorded_factor,
                                         scale=scale,
                                         unit=unit)
 #        if distance == 60:
